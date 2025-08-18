@@ -2,6 +2,15 @@
 
 A personal fork of ZeldaFan0225/AI_Horde_Discord, with added features.
 
+## Changes in this Fork
+
+- New command `/alter_party`: Change a party's end date.
+  - Only the party creator can run it (same permissions as `/end_party`).
+  - Required argument `date`: ISO datetime (e.g. `2025-12-31T23:59:59Z`) or UNIX timestamp (seconds or milliseconds). Must be in the future.
+  - Announces the change in the party thread and attempts to update the initial pinned message to reflect the new end time.
+  - Can revive an already expired party as long as it still exists in the database (i.e., not yet cleaned up or ended).
+  - Note: This does not update any associated shared key expiry.
+
 ---
 Original desc:
 # AI_Horde_Discord
