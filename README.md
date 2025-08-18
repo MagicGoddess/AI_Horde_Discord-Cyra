@@ -1,3 +1,9 @@
+# AI Horde Discord Bot - Cyra Edition
+
+A personal fork of ZeldaFan0225/AI_Horde_Discord, with added features.
+
+---
+Original desc:
 # AI_Horde_Discord
 
 A basic Discord bot to generate images using the AI Horde API.
