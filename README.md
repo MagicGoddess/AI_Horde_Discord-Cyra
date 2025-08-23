@@ -13,6 +13,13 @@ A personal fork of ZeldaFan0225/AI_Horde_Discord, with added features.
   - Announces changes in the party thread and attempts to update the initial pinned message to reflect the new end time, style, and/or resolution.
   - Can revive an already expired party as long as it still exists in the database (i.e., not yet cleaned up or ended).
   - Note: This does not update any associated shared key expiry.
+\n- New command `/party_revive`: Revive a purged party using its pinned settings.
+  - Use inside the original party thread after it was purged from the DB (clean-up or manual end+purge).
+  - Required argument `duration` (days) for how long the revived party should last.
+  - Parses the first pinned party announcement to restore: creator, name, style/category, resolution (if any), kudos award, recurring flag, wordlist, and whether the creator paid for generations.
+  - If the original party paid for generations, the creator must be logged in so a new shared key can be created.
+  - If a party already exists in the thread, it will ask you to use `/alter_party` instead.
+  - Posts and pins a fresh announcement reflecting the new end time.
 
 ---
 Original desc:
@@ -43,6 +50,7 @@ The bot has the following features:
 - /interrogate to interrogate any image
 - /party to start a generation party with a given style
   - Optional `width`/`height` parameters let you override the chosen style's default resolution for the entire party.
+  - `/alter_party` can adjust end date/style/resolution; `/party_revive` can restore a purged party from its pinned announcement.
 - "Remix" to edit another discord users avatar 
 - "Caption" to caption anozher discord users avatar
 - advanced configuration file which lets you change how the bot behaves and what actions the user can use (for limits refer to https://aihorde.net/api)
