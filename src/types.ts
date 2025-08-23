@@ -84,6 +84,8 @@ export interface Party {
     created_at: Date,
     ends_at: Date,
     style: string,
+    width?: number,
+    height?: number,
     award: number,
     recurring: boolean,
     shared_key?: string,

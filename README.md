@@ -4,12 +4,13 @@ A personal fork of ZeldaFan0225/AI_Horde_Discord, with added features.
 
 ## Changes in this Fork
 
-- New command `/alter_party`: Change a party's end date and/or style.
+- New command `/alter_party`: Change a party's end date, style, and/or resolution.
   - Only the party creator can run it (same permissions as `/end_party`).
   - Optional argument `date`: ISO datetime (e.g. `2025-12-31T23:59:59Z`) or UNIX timestamp (seconds or milliseconds). Must be in the future if provided.
   - Optional argument `style`: a valid style or category name; validates against configured lists and blacklists.
+  - Optional arguments `width` and `height`: override the party's generation resolution (px). You can set one or both.
   - At least one of `date` or `style` is required; the command errors if neither is provided.
-  - Announces changes in the party thread and attempts to update the initial pinned message to reflect the new end time and/or style.
+  - Announces changes in the party thread and attempts to update the initial pinned message to reflect the new end time, style, and/or resolution.
   - Can revive an already expired party as long as it still exists in the database (i.e., not yet cleaned up or ended).
   - Note: This does not update any associated shared key expiry.
 
@@ -41,6 +42,7 @@ The bot has the following features:
 - /transferkudos (Transfer Kudos context command) to send somebody kudos
 - /interrogate to interrogate any image
 - /party to start a generation party with a given style
+  - Optional `width`/`height` parameters let you override the chosen style's default resolution for the entire party.
 - "Remix" to edit another discord users avatar 
 - "Caption" to caption anozher discord users avatar
 - advanced configuration file which lets you change how the bot behaves and what actions the user can use (for limits refer to https://aihorde.net/api)

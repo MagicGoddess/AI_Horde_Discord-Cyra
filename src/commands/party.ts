@@ -43,6 +43,24 @@ const command_data = new SlashCommandBuilder()
             .setRequired(true)
             .setAutocomplete(true)
         )
+        .addIntegerOption(
+            new SlashCommandIntegerOption()
+            .setName("width")
+            .setDescription("Override generation width (px)")
+            .setRequired(false)
+            .setMinValue(64)
+            .setMaxValue(3072)
+            .setAutocomplete(true)
+        )
+        .addIntegerOption(
+            new SlashCommandIntegerOption()
+            .setName("height")
+            .setDescription("Override generation height (px)")
+            .setRequired(false)
+            .setMinValue(64)
+            .setMaxValue(3072)
+            .setAutocomplete(true)
+        )
         .addBooleanOption(
             new SlashCommandBooleanOption()
             .setName("recurring")
@@ -83,6 +101,8 @@ export default class extends Command {
         const wordlist = (ctx.interaction.options.getString("wordlist") ?? "").split(",").map(w => w.trim().toLowerCase()).filter(w => w)
         const style_raw = ctx.interaction.options.getString("style") ?? ctx.client.config.generate?.default?.style ?? "raw"
         const style = ctx.client.horde_styles[style_raw.toLowerCase()] || ctx.client.horde_style_categories[style_raw.toLowerCase()]
+        const override_width = ctx.interaction.options.getInteger("width") || null
+        const override_height = ctx.interaction.options.getInteger("height") || null
 
         const user_token = await ctx.client.getUserToken(ctx.interaction.user.id, ctx.database)
 
@@ -124,11 +144,13 @@ export default class extends Command {
             if(ctx.client.config.advanced?.dev) console.log(shared_key_id)
         }
 
-        const party = await ctx.database.query(`INSERT INTO parties (channel_id, guild_id, creator_id, ends_at, style, award, recurring, shared_key, wordlist) VALUES ($1, $2, $3, CURRENT_TIMESTAMP + interval '${duration} day', $4, $5, $6, $7, $8) RETURNING *`, [
+        const party = await ctx.database.query(`INSERT INTO parties (channel_id, guild_id, creator_id, ends_at, style, width, height, award, recurring, shared_key, wordlist) VALUES ($1, $2, $3, CURRENT_TIMESTAMP + interval '${duration} day', $4, $5, $6, $7, $8, $9, $10) RETURNING *`, [
             thread.id,
             thread.guildId,
             ctx.interaction.user.id,
             style_raw.toLowerCase(),
+            override_width,
+            override_height,
             award,
             recurring,
             shared_key_id,
@@ -141,7 +163,7 @@ export default class extends Command {
         }
 
         const start = await thread.send({
-            content: `<@${ctx.interaction.user.id}> started the party "${name}" with the ${Array.isArray(style) ? "category" : "style"} "${style_raw}".\nYou will get ${award} kudos for ${recurring ? `every generation` : `your first generation`}.\nThe party ends <t:${Math.round((Date.now() + 1000 * 60 * 60 * 24 * duration)/1000)}:R>${wordlist.length ? `\nThe prompt has to include the words: ${wordlist.join(",")}` : ""}${pay && shared_key_id ? "\nThe party creator will pay for all generations 🥳" : ""}\n\n${ctx.client.config.party.mention_roles?.length ? ctx.client.config.party.mention_roles.map(r => `<@&${r}>`).join(" ") : ""}`,
+            content: `<@${ctx.interaction.user.id}> started the party "${name}" with the ${Array.isArray(style) ? "category" : "style"} "${style_raw}".${override_width || override_height ? `\nResolution: ${override_width ?? "-"}x${override_height ?? "-"}` : ""}\nYou will get ${award} kudos for ${recurring ? `every generation` : `your first generation`}.\nThe party ends <t:${Math.round((Date.now() + 1000 * 60 * 60 * 24 * duration)/1000)}:R>${wordlist.length ? `\nThe prompt has to include the words: ${wordlist.join(",")}` : ""}${pay && shared_key_id ? "\nThe party creator will pay for all generations 🥳" : ""}\n\n${ctx.client.config.party.mention_roles?.length ? ctx.client.config.party.mention_roles.map(r => `<@&${r}>`).join(" ") : ""}`,
             allowedMentions: {
                 users: [ctx.interaction.user.id],
                 roles: ctx.client.config.party.mention_roles
@@ -155,6 +177,17 @@ export default class extends Command {
     override async autocomplete(context: AutocompleteContext): Promise<any> {
         const option = context.interaction.options.getFocused(true)
         switch(option.name) {
+            case "width":
+            case "height": {
+                const min = context.client.config.advanced_generate?.user_restrictions?.height?.min ?? 64
+                const max = context.client.config.advanced_generate?.user_restrictions?.height?.max ?? 3072
+                const steps = Array.from({length: Math.floor(3072/64)}).map((_, i) => ({
+                    name: `${(i+1)*64}px${(i+1)*64 > 1024 ? " (Requires Kudos upfront)" : ""}`,
+                    value: (i+1)*64
+                })).filter(v => v.value >= min && v.value <= max)
+                const inp = context.interaction.options.getFocused(true)
+                return await context.interaction.respond(steps.filter((v) => !inp.value || `${v.value}`.includes(String(inp.value))).slice(0,25))
+            }
             case "style": {
                 const styles = Object.keys(context.client.horde_styles)
                 const categories = Object.keys(context.client.horde_style_categories)

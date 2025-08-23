@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, SlashCommandStringOption } from "discord.js";
+import { SlashCommandBuilder, SlashCommandStringOption, SlashCommandIntegerOption } from "discord.js";
 import { Command } from "../classes/command";
 import { CommandContext } from "../classes/commandContext";
 import { AutocompleteContext } from "../classes/autocompleteContext";
@@ -6,12 +6,28 @@ import { AutocompleteContext } from "../classes/autocompleteContext";
 const command_data = new SlashCommandBuilder()
     .setName("alter_party")
     .setDMPermission(false)
-    .setDescription("Alters the party end date and/or style")
+    .setDescription("Alters the party end date, style, and/or resolution")
     .addStringOption(
         new SlashCommandStringOption()
             .setName("date")
             .setDescription("New end date (ISO string or UNIX timestamp)")
             .setRequired(false)
+    )
+    .addIntegerOption(
+        new SlashCommandIntegerOption()
+            .setName("width")
+            .setDescription("Override generation width (px)")
+            .setMinValue(64)
+            .setMaxValue(3072)
+            .setAutocomplete(true)
+    )
+    .addIntegerOption(
+        new SlashCommandIntegerOption()
+            .setName("height")
+            .setDescription("Override generation height (px)")
+            .setMinValue(64)
+            .setMaxValue(3072)
+            .setAutocomplete(true)
     )
     .addStringOption(
         new SlashCommandStringOption()
@@ -40,8 +56,10 @@ export default class extends Command {
         const dateInput = ctx.interaction.options.getString("date")
         const targetTimestamp = dateInput ? this.parseDateInput(dateInput) : null
         const styleRaw = ctx.interaction.options.getString("style")?.toLowerCase()
+        const width = ctx.interaction.options.getInteger("width")
+        const height = ctx.interaction.options.getInteger("height")
 
-        if(!dateInput && !styleRaw) return ctx.error({error: "Please specify at least one argument: date or style."})
+        if(!dateInput && !styleRaw && width === null && height === null) return ctx.error({error: "Please specify at least one argument: date, style, width or height."})
 
         if(dateInput) {
             if(!targetTimestamp) return ctx.error({error: "Invalid date. Use ISO date (e.g. 2025-08-18T12:00:00Z) or UNIX timestamp."})
@@ -56,19 +74,15 @@ export default class extends Command {
             if(ctx.client.config.generate?.blacklisted_styles?.includes(styleRaw)) return ctx.error({error: "The chosen style or category is blacklisted"})
         }
 
+        const sets: string[] = []
+        const params: any[] = [ctx.interaction.channelId]
+        let idx = 2
+        if(dateInput) { sets.push(`ends_at=$${idx++}`); params.push(new Date(targetTimestamp!)) }
+        if(styleRaw) { sets.push(`style=$${idx++}`); params.push(styleRaw) }
+        if(width !== null && width !== undefined) { sets.push(`width=$${idx++}`); params.push(width) }
+        if(height !== null && height !== undefined) { sets.push(`height=$${idx++}`); params.push(height) }
         const updated = await ctx.database
-            .query(
-                dateInput && styleRaw
-                    ? "UPDATE parties SET ends_at=$2, style=$3 WHERE channel_id=$1 RETURNING *"
-                    : dateInput
-                        ? "UPDATE parties SET ends_at=$2 WHERE channel_id=$1 RETURNING *"
-                        : "UPDATE parties SET style=$2 WHERE channel_id=$1 RETURNING *",
-                dateInput && styleRaw
-                    ? [ctx.interaction.channelId, new Date(targetTimestamp!), styleRaw]
-                    : dateInput
-                        ? [ctx.interaction.channelId, new Date(targetTimestamp!)]
-                        : [ctx.interaction.channelId, styleRaw]
-            )
+            .query(`UPDATE parties SET ${sets.join(", ")} WHERE channel_id=$1 RETURNING *`, params)
             .catch(console.error)
 
         if(!updated?.rowCount) return ctx.error({error: "Unable to alter party end date"})
@@ -78,22 +92,22 @@ export default class extends Command {
 
         const endEpoch = targetTimestamp ? Math.floor(targetTimestamp / 1000) : null
         await ctx.interaction.reply({
-            content: dateInput && styleRaw
-                ? "Party end date and style updated."
-                : dateInput
-                    ? "Party end date updated."
-                    : "Party style updated.",
+            content: [
+                dateInput ? "Party end date updated." : null,
+                styleRaw ? "Party style updated." : null,
+                (width !== null && width !== undefined) || (height !== null && height !== undefined) ? "Party resolution updated." : null
+            ].filter(Boolean).join(" "),
             ephemeral: true
         })
 
         // Announce the change in the party thread/channel
         await ctx.interaction.channel?.send({
-            content:
-                dateInput && styleRaw
-                    ? `The party has been updated by <@${ctx.interaction.user.id}>.\nNew end: <t:${endEpoch}:R>\nNew ${ctx.client.horde_styles[styleRaw] ? "style" : "category"}: "${styleRaw}"`
-                    : dateInput
-                        ? `The party end date has been changed by <@${ctx.interaction.user.id}>.\nNew end: <t:${endEpoch}:R>`
-                        : `The party style has been changed by <@${ctx.interaction.user.id}>.\nNew ${ctx.client.horde_styles[styleRaw!] ? "style" : "category"}: "${styleRaw}"`
+            content: [
+                `The party has been updated by <@${ctx.interaction.user.id}>.`,
+                dateInput ? `New end: <t:${endEpoch}:R>` : null,
+                styleRaw ? `New ${ctx.client.horde_styles[styleRaw] ? "style" : "category"}: "${styleRaw}"` : null,
+                (width !== null && width !== undefined) || (height !== null && height !== undefined) ? `New resolution: ${width ?? "-"}x${height ?? "-"}` : null
+            ].filter(Boolean).join("\n")
         }).catch(console.error)
 
         // Try to edit the initial pinned message to reflect the new date
@@ -109,6 +123,13 @@ export default class extends Command {
                 if(styleRaw) {
                     const label = ctx.client.horde_styles[styleRaw] ? "style" : "category"
                     replaced = replaced.replace(/with the (category|style) "[^"]+"/i, `with the ${label} "${styleRaw}"`)
+                }
+                if((width !== null && width !== undefined) || (height !== null && height !== undefined)) {
+                    if(/\nResolution: .*x.*/i.test(replaced)) {
+                        replaced = replaced.replace(/\nResolution: .*x.*/i, `\nResolution: ${width ?? "-"}x${height ?? "-"}`)
+                    } else {
+                        replaced = replaced.replace(/("\.|\nYou will get)/, `\nResolution: ${width ?? "-"}x${height ?? "-"}$1`)
+                    }
                 }
                 if(replaced !== old) await msg.edit({content: replaced}).catch(console.error)
             })
@@ -134,6 +155,12 @@ export default class extends Command {
     override async autocomplete(context: AutocompleteContext): Promise<any> {
         const option = context.interaction.options.getFocused(true)
         switch(option.name) {
+            case "width":
+            case "height": {
+                const steps = Array.from({length: 3072/64}).map((_, i) => ({name: `${(i+1)*64}px${(i+1)*64 > 1024 ? " (Requires Kudos upfront)" : ""}`, value: (i+1)*64})).filter(v => v.value >= (context.client.config.advanced_generate?.user_restrictions?.height?.min ?? 64) && v.value <= (context.client.config.advanced_generate?.user_restrictions?.height?.max ?? 3072))
+                const inp = context.interaction.options.getFocused(true)
+                return await context.interaction.respond(steps.filter((v) => !inp.value || `${v.value}`.includes(String(inp.value))).slice(0,25))
+            }
             case "style": {
                 const styles = Object.keys(context.client.horde_styles)
                 const categories = Object.keys(context.client.horde_style_categories)

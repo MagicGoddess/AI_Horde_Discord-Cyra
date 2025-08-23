@@ -145,6 +145,8 @@ export default class extends Command {
 
         let height = style?.height
         let width = style?.width
+        if(party?.width) width = party.width
+        if(party?.height) height = party.height
 
         if(ctx.client.config.advanced?.dev) {
             console.log(style)
