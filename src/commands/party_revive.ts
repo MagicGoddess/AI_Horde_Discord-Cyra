@@ -65,9 +65,12 @@ export default class extends Command {
         const name = content.match(/started the party\s+"(?<name>[^"\\]+)"/i)?.groups?.["name"] || "Party"
 
         // Parse style or category
-        const styleMatch = content.match(/with the\s+(?<type>category|style)\s+"(?<style>[\w-]+)"/i)
-        const styleRaw = styleMatch?.groups?.["style"]?.toLowerCase()
+        const styleMatch = content.match(/with the\s+(?<type>category|style)\s+"(?<style>[^"\\]+?)"/i)
+        let styleRaw: string = styleMatch?.groups?.["style"] || ""
         if(!styleRaw) return ctx.error({error: "Unable to find style/category in pinned message."})
+        
+        // Extract just the style name (before any newline or "Resolution:" text)
+        styleRaw = styleRaw.trim().split('\n')[0]!.trim().toLowerCase()
         if(ctx.client.config.generate?.blacklisted_styles?.includes(styleRaw)) return ctx.error({error: "The pinned style/category is blacklisted."})
 
         // Parse optional resolution
