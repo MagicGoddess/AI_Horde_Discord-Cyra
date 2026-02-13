@@ -67,10 +67,17 @@ export default class extends Command {
         // Parse style or category
         const styleMatch = content.match(/with the\s+(?<type>category|style)\s+"(?<style>[^"\\]+?)"/i)
         let styleRaw: string = styleMatch?.groups?.["style"] || ""
+
+        // Fallback: if quoted style not found, try parsing with optional opening quote (for broken messages)
+        if(!styleRaw) {
+            const fallbackMatch = content.match(/with the\s+(?<type>category|style)\s+"?(?<style>[a-z0-9_-]+)/i)
+            styleRaw = fallbackMatch?.groups?.["style"] || ""
+        }
+
         if(!styleRaw) return ctx.error({error: "Unable to find style/category in pinned message."})
         
         // Extract just the style name (before any newline or "Resolution:" text)
-        styleRaw = styleRaw.trim().split('\n')[0]!.trim().toLowerCase()
+        styleRaw = styleRaw.trim().split('\n')[0]!.trim().split(' ')[0]!.trim().toLowerCase()
         if(ctx.client.config.generate?.blacklisted_styles?.includes(styleRaw)) return ctx.error({error: "The pinned style/category is blacklisted."})
 
         // Parse optional resolution
