@@ -338,6 +338,34 @@ ETA: <t:${Math.floor(Date.now()/1000)+(start_status?.wait_time ?? 0)}:R>`
         let prev_left = 1
 
         let done = false
+        const preview_images = new Map<string, Buffer>()
+        const seen_generation_ids = new Set<string>()
+
+        async function updatePreviewImages(finishedCount: number) {
+            if(finishedCount <= seen_generation_ids.size) return false
+            const images = await ctx.ai_horde_manager.getImageGenerationStatus(generation_start!.id!).catch((e) => ctx.client.config.advanced?.dev ? console.error(e) : null)
+            if(!images?.generations?.length) return false
+
+            let has_new_visible_image = false
+            for(const g of images.generations) {
+                if(!g.id || seen_generation_ids.has(g.id)) continue
+                seen_generation_ids.add(g.id)
+                if(g.censored) continue
+                const req = await Centra(g.img!, "GET").send().catch((e) => ctx.client.config.advanced?.dev ? console.error(e) : null)
+                if(!req?.body) {
+                    seen_generation_ids.delete(g.id)
+                    continue
+                }
+                preview_images.set(g.id, req.body)
+                has_new_visible_image = true
+            }
+
+            return has_new_visible_image
+        }
+
+        function getPreviewFiles() {
+            return Array.from(preview_images.entries()).map(([id, data]) => new AttachmentBuilder(data, {name: `${id}.webp`}))
+        }
 
         if(ctx.client.config.generate?.improve_loading_time && (start_status?.wait_time ?? 0) <= 3) {
             // wait before starting the loop so that the first iteration can already pick up the result
@@ -397,11 +425,17 @@ ETA: <t:${Math.floor(Date.now()/1000)+(status?.wait_time ?? 0)}:R>`
                 }).toJSON())
             }
 
-            return message.edit({
+            const should_upload_preview = await updatePreviewImages(status.finished ?? 0)
+            const edit_data: any = {
                 content: "",
                 embeds,
                 components
-            })
+            }
+            if(should_upload_preview) {
+                edit_data.files = getPreviewFiles()
+            }
+
+            return message.edit(edit_data)
         }, 1000 * (ctx.client.config?.generate?.update_generation_status_interval_seconds || 5))
 
         async function getCheckAndDisplayResult(precheck?: boolean) {
