@@ -25,6 +25,7 @@ A personal fork of ZeldaFan0225/AI_Horde_Discord, with added features.
   - SQLite uses a local file at `database.sqlite.path` and is intended for fresh, single-instance deployments.
   - Runtime database files under `data/` are ignored by git.
 - Progressive generation previews: `/generate` and `/advanced_generate` now attach completed images to the same generation message as soon as each image is finished, instead of waiting for the full batch.
+- Generation timing: `/generate`, `/advanced_generate`, and remix now show how long a generation took when it completes successfully, and include elapsed time in system/API failure messages.
 
 ---
 Original desc:

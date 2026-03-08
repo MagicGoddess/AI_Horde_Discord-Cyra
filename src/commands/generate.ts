@@ -6,6 +6,7 @@ import { readFileSync, appendFileSync } from "fs";
 import { Config } from "../types";
 import {ModelGenerationInputStableSamplers, ImageGenerationInput} from "@zeldafan0225/ai_horde";
 import Centra from "centra";
+import { formatDuration } from "../formatDuration";
 const {buffer2webpbuffer} = require("webp-converter")
 
 const config = JSON.parse(readFileSync("./config.json").toString()) as Config
@@ -257,6 +258,8 @@ export default class extends Command {
             console.log(generation_data)
         }
 
+        const generationStartedAt = Date.now()
+        const getElapsedGenerationTime = () => formatDuration(Date.now() - generationStartedAt)
         const generation_start = await ctx.ai_horde_manager.postAsyncImageGenerate(generation_data, {token})
         .catch((e) => {
             if(ctx.client.config.advanced?.dev) console.error(e)
@@ -390,7 +393,7 @@ ETA: <t:${Math.floor(Date.now()/1000)+(start_status?.wait_time ?? 0)}:R>`
                     await ctx.ai_horde_manager.deleteImageGenerationRequest(generation_start.id!)
                     message.edit({
                         components: [],
-                        content: "Generation cancelled due to errors",
+                        content: `Generation cancelled due to errors after ${getElapsedGenerationTime()}`,
                         embeds: []
                     })
                 }
@@ -444,7 +447,7 @@ ETA: <t:${Math.floor(Date.now()/1000)+(status?.wait_time ?? 0)}:R>`
             done = !!status?.done
             const horde_data = await ctx.ai_horde_manager.getPerformance()
             if(!status || status.faulted) {
-                if(!done) await message.edit({content: "Image generation has been cancelled", embeds: []});
+                if(!done) await message.edit({content: `Image generation has been cancelled after ${getElapsedGenerationTime()}`, embeds: []});
                 if(!precheck) clearInterval(inter)
                 return null;
             }
@@ -475,7 +478,7 @@ ETA: <t:${Math.floor(Date.now()/1000)+(status?.wait_time ?? 0)}:R>`
                     const embeds = [
                         new EmbedBuilder({
                             title: "Generation Finished",
-                            description: `**Prompt** ${ctx.interaction.options.getString("prompt", true)}\n**Style** \`${style?.name ?? style_raw}\`${style?.type === "category-style" ? ` from category \`${style_raw}\`` : ""}\n**Kudos Consumed** \`${images.kudos}\`${image_map.length !== amount ? "\nCensored Images are not displayed" : ""}`,
+                            description: `**Prompt** ${ctx.interaction.options.getString("prompt", true)}\n**Style** \`${style?.name ?? style_raw}\`${style?.type === "category-style" ? ` from category \`${style_raw}\`` : ""}\n**Kudos Consumed** \`${images.kudos}\`\n**Time Taken** \`${getElapsedGenerationTime()}\`${image_map.length !== amount ? "\nCensored Images are not displayed" : ""}`,
                             color: Colors.Blue,
                             footer: {text: `Generation ID ${generation_start!.id}`},
                             thumbnail: img_data && image_map.length < 10 ? {url: "attachment://original.webp"} : img_data ? {url: img!.url} : undefined
@@ -500,7 +503,7 @@ ETA: <t:${Math.floor(Date.now()/1000)+(status?.wait_time ?? 0)}:R>`
                         title: `Image ${i+1}`,
                         image: {url: `attachment://${g.seed ?? `image${i}`}.webp`},
                         color: Colors.Blue,
-                        description: `${!i ? `**Raw Prompt:** ${ctx.interaction.options.getString("prompt", true)}\n**Processed Prompt:** ${prompt}\n**Style:** \`${style?.name ?? style_raw}\`${style?.type === "category-style" ? ` from category \`${style_raw}\`` : ""}\n**Total Kudos Cost:** \`${images.kudos}\`` : ""}${ctx.client.config.advanced?.dev ? `\n\n**Image ID** ${g.id}` : ""}` || undefined,
+                        description: `${!i ? `**Raw Prompt:** ${ctx.interaction.options.getString("prompt", true)}\n**Processed Prompt:** ${prompt}\n**Style:** \`${style?.name ?? style_raw}\`${style?.type === "category-style" ? ` from category \`${style_raw}\`` : ""}\n**Total Kudos Cost:** \`${images.kudos}\`\n**Time Taken:** \`${getElapsedGenerationTime()}\`` : ""}${ctx.client.config.advanced?.dev ? `\n\n**Image ID** ${g.id}` : ""}` || undefined,
                     })
                     if(img_data) embed.setThumbnail(`attachment://original.webp`)
                     return {attachment, embed}
@@ -516,7 +519,7 @@ ETA: <t:${Math.floor(Date.now()/1000)+(status?.wait_time ?? 0)}:R>`
                 if(ctx.client.config.generate?.user_restrictions?.allow_rating && (generation_data.shared ?? true) && files.length === 1) {
                     components = [...generateButtons(generation_start!.id!), ...components]
                 }
-                await message.edit({content: `Image generation finished\n\n**A new view is available, check it out by enabling \`result_structure_v2_enabled\` in the bots config**`, components, embeds, files});
+                await message.edit({content: `Image generation finished in ${getElapsedGenerationTime()}\n\n**A new view is available, check it out by enabling \`result_structure_v2_enabled\` in the bots config**`, components, embeds, files});
                 if(party) await handlePartySubmit()
                 return null
             } 

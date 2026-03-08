@@ -3,6 +3,7 @@ import { Modal } from "../classes/modal";
 import { ModalContext } from "../classes/modalContext";
 import { appendFileSync } from "fs";
 import {SourceImageProcessingTypes, ImageGenerationInput, ModelGenerationInputStableSamplers} from "@zeldafan0225/ai_horde";
+import { formatDuration } from "../formatDuration";
 import { EmbedBuilder } from "@discordjs/builders";
 import { AttachmentBuilder, ButtonBuilder, Colors } from "discord.js";
 
@@ -82,6 +83,8 @@ export default class extends Modal {
 
         const message = await ctx.interaction.editReply({content: `Remixing...`})
 
+        const generationStartedAt = Date.now()
+        const getElapsedGenerationTime = () => formatDuration(Date.now() - generationStartedAt)
         const generation_start = await ctx.ai_horde_manager.postAsyncImageGenerate(generation_data, {token: user_token})
         .catch((e) => {
             if(ctx.client.config.advanced?.dev) console.error(e)
@@ -130,7 +133,7 @@ export default class extends Modal {
             const embed = new EmbedBuilder({
                 color: Colors.Blue,
                 title: "Remixing finished",
-                description: `**Prompt**\n${prompt}\n**Target**\n${target_user?.displayName}\n**Strength** ${strength}%${ctx.client.config.advanced?.dev ? `\n**Seed** ${generation.seed}` : ""}`,
+                description: `**Prompt**\n${prompt}\n**Target**\n${target_user?.displayName}\n**Strength** ${strength}%\n**Time Taken** \`${getElapsedGenerationTime()}\`${ctx.client.config.advanced?.dev ? `\n**Seed** ${generation.seed}` : ""}`,
                 thumbnail: {url: target_user?.displayAvatarURL({extension: "webp", size: 2048})},
                 image: {url: `attachment://${generation.seed ?? `image${0}`}.webp`},
             })
@@ -149,7 +152,7 @@ export default class extends Modal {
         }
 
         async function error(msg?: string) {
-            await ctx.interaction.followUp({content: `Unable to remix...${msg?.length ? `\n${msg}` : ""}`, ephemeral: true}).catch(console.error)
+            await ctx.interaction.followUp({content: `Unable to remix after ${getElapsedGenerationTime()}...${msg?.length ? `\n${msg}` : ""}`, ephemeral: true}).catch(console.error)
             await message.delete()
         }
     }

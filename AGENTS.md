@@ -28,6 +28,7 @@
 - Commits: short, imperative summaries (e.g., "add clip skip support"). Group related changes.
 - PRs: use `.github/PULL_REQUEST_TEMPLATE/pull_request_template.md`. Include description, motivation, steps to test, and screenshots of bot output when UI/behavior changes.
 - Requirements: update docs when config or commands change; ensure `npm run deploy` builds cleanly; link related issues.
+- Always update relevant docs (`README.md`, `config.md`, `DB_SETUP.md`, `AGENTS.md`, and similar repo docs) when behavior, commands, configuration, setup, or operator-facing workflows change.
 
 ## Security & Configuration Tips
 - Never commit secrets. Populate `.env` from `template.env` and keep it local.
