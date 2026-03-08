@@ -20,6 +20,10 @@ A personal fork of ZeldaFan0225/AI_Horde_Discord, with added features.
   - If the original party paid for generations, the creator must be logged in so a new shared key can be created.
   - If a party already exists in the thread, it will ask you to use `/alter_party` instead.
   - Posts and pins a fresh announcement reflecting the new end time.
+- Database backend support now includes SQLite next to PostgreSQL.
+  - Select the backend with `database.type` in `config.json`.
+  - SQLite uses a local file at `database.sqlite.path` and is intended for fresh, single-instance deployments.
+  - Runtime database files under `data/` are ignored by git.
 - Progressive generation previews: `/generate` and `/advanced_generate` now attach completed images to the same generation message as soon as each image is finished, instead of waiting for the full batch.
 
 ---

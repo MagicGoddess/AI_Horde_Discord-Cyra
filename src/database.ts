@@ -33,7 +33,7 @@ type RawPendingKudosRow = {
 function normalizeParty(row: RawPartyRow | undefined): Party | undefined {
     if(!row) return undefined;
     return {
-        index: row.index,
+        index: Number(row.index || 0),
         channel_id: row.channel_id,
         guild_id: row.guild_id,
         creator_id: row.creator_id,
@@ -53,6 +53,7 @@ function normalizeParty(row: RawPartyRow | undefined): Party | undefined {
 function normalizePendingKudos(row: RawPendingKudosRow): PendingKudosRecord {
     return {
         ...row,
+        index: Number(row.index || 0),
         updated_at: row.updated_at instanceof Date ? row.updated_at : new Date(row.updated_at)
     };
 }
@@ -194,13 +195,13 @@ class SqliteAdapter implements DatabaseAdapter {
     async initialize(): Promise<void> {
         this.db.exec(`
             CREATE TABLE IF NOT EXISTS user_tokens (
-                index INTEGER PRIMARY KEY AUTOINCREMENT,
+                "index" INTEGER,
                 id TEXT PRIMARY KEY,
                 token TEXT NOT NULL,
                 horde_id INTEGER NOT NULL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS parties (
-                index INTEGER PRIMARY KEY AUTOINCREMENT,
+                "index" INTEGER,
                 channel_id TEXT PRIMARY KEY,
                 guild_id TEXT NOT NULL,
                 creator_id TEXT NOT NULL,
@@ -216,7 +217,7 @@ class SqliteAdapter implements DatabaseAdapter {
                 wordlist TEXT NOT NULL DEFAULT '[]'
             );
             CREATE TABLE IF NOT EXISTS pending_kudos (
-                index INTEGER PRIMARY KEY AUTOINCREMENT,
+                "index" INTEGER,
                 unique_id TEXT PRIMARY KEY,
                 target_id TEXT NOT NULL,
                 from_id TEXT NOT NULL,
