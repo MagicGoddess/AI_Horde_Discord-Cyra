@@ -1,10 +1,10 @@
 import {AIHorde} from "@zeldafan0225/ai_horde";
 import { ChatInputCommandInteraction } from "discord.js";
-import { Pool } from "pg";
 import { AIHordeClient } from "../classes/client";
 import { CommandContext } from "../classes/commandContext";
+import { DatabaseAdapter } from "../types";
 
-export async function handleCommands(interaction: ChatInputCommandInteraction, client: AIHordeClient, database: Pool | undefined, ai_horde_manager: AIHorde) {
+export async function handleCommands(interaction: ChatInputCommandInteraction, client: AIHordeClient, database: DatabaseAdapter | undefined, ai_horde_manager: AIHorde) {
     const command = await client.commands.getCommand(interaction).catch(() => null)
     if(!command) return;
     const context = new CommandContext({interaction, client, database, ai_horde_manager})

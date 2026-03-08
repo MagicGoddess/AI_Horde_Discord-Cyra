@@ -16,7 +16,7 @@ export default class extends Modal {
         if(!ctx.database) return ctx.error({error: "The database is disabled. This action requires a database."})
         const raw_token = (ctx.interaction.components[0]?.components[0] as TextInputModalData).value
         if(!raw_token?.length || raw_token ===  (ctx.client.config.default_token || "0000000000")) {
-            await ctx.database.query("DELETE FROM user_tokens WHERE id=$1", [ctx.interaction.user.id])
+            await ctx.database.deleteUserToken(ctx.interaction.user.id)
             return ctx.interaction.reply({
                 content: "Deleted token from database",
                 ephemeral: true
@@ -26,8 +26,8 @@ export default class extends Modal {
         if(!user_data || !user_data?.id) return ctx.error({error: "Unable to find user with this token!"})
         const token = ctx.client.config.advanced?.encrypt_token ? ctx.client.encryptString(raw_token) : raw_token
         if(!token) return ctx.error({error: "Unable to encrypt token"})
-        const res = await ctx.database.query("INSERT INTO user_tokens VALUES (DEFAULT, $1, $2, $3) ON CONFLICT (id) DO UPDATE SET token=$2, horde_id=$3 RETURNING *", [ctx.interaction.user.id, token, user_data.id])
-        if(!res.rowCount) return ctx.error({error: "Unable to save token"})
+        const res = await ctx.database.upsertUserToken(ctx.interaction.user.id, token, user_data.id)
+        if(!res) return ctx.error({error: "Unable to save token"})
         if(ctx.interaction.inCachedGuild()) {
             const member = ctx.interaction.member
             let apply_roles = []
@@ -42,9 +42,9 @@ export default class extends Modal {
             content: `S${ctx.client.config.advanced?.encrypt_token ? "ecurely s" : ""}aved your token in the database.`,
             ephemeral: true
         })
-        const pending_kudos = await ctx.database.query<{unique_id: string, target_id: string, from_id: string, amount: number}>("DELETE FROM pending_kudos WHERE target_id=$1 RETURNING *", [ctx.interaction.user.id]).catch(console.error)
-        if(pending_kudos?.rowCount) {
-            const res_promise = pending_kudos.rows.map(async transaction => {
+        const pending_kudos = await ctx.database.claimPendingKudos(ctx.interaction.user.id).catch(console.error)
+        if(pending_kudos?.length) {
+            const res_promise = pending_kudos.map(async transaction => {
                 const from_token = await ctx.client.getUserToken(transaction.from_id, ctx.database)
                 if(!from_token) return {success: false, unique_id: transaction.unique_id, from: transaction.from_id, amount: transaction.amount}
                 const res = await ctx.ai_horde_manager.postKudosTransfer({username: user_data.username!, amount: transaction.amount}, {token: from_token}).catch(console.error)

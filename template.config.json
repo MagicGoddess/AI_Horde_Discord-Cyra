@@ -1,5 +1,11 @@
 {
     "use_database": true,
+    "database": {
+        "type": "postgres",
+        "sqlite": {
+            "path": "./data/ai_horde.sqlite"
+        }
+    },
     "default_token": "0000000000",
     "apply_roles_to_worker_owners": [
 

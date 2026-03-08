@@ -82,7 +82,7 @@ export default class extends Command {
             }
         }
 
-        const db_entry = await ctx.database.query("SELECT * FROM user_tokens WHERE horde_id=$1 LIMIT 1", [Number(user_data.id)]).then(res => res.rows[0]).catch(console.error)
+        const db_entry = await ctx.database.getUserTokenByHordeId(Number(user_data.id)).catch(console.error)
 
 
         if(!user_data) return ctx.error({

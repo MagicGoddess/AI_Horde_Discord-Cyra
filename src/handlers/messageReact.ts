@@ -1,9 +1,9 @@
 import {AIHorde} from "@zeldafan0225/ai_horde";
 import { Colors, MessageReaction, PartialMessageReaction, PartialUser, User } from "discord.js";
-import { Pool } from "pg";
 import { AIHordeClient } from "../classes/client";
+import { DatabaseAdapter } from "../types";
 
-export async function handleMessageReact(reaction: PartialMessageReaction | MessageReaction, user: User | PartialUser, client: AIHordeClient, database: Pool | undefined, ai_horde_manager: AIHorde): Promise<any> {
+export async function handleMessageReact(reaction: PartialMessageReaction | MessageReaction, user: User | PartialUser, client: AIHordeClient, database: DatabaseAdapter | undefined, ai_horde_manager: AIHorde): Promise<any> {
     if(!client.config.use_database || !database || !client.config.react_to_transfer?.enabled) return;
     if(!client.checkGuildPermissions(reaction.message.guildId, "react_to_transfer")) return;
     const emoji = client.config.react_to_transfer?.emojis?.find(e => e.id === reaction.emoji.id)
@@ -32,8 +32,8 @@ export async function handleMessageReact(reaction: PartialMessageReaction | Mess
     if(!target_usertoken) {
         // target user has not logged in
         if(client.config.react_to_transfer.allow_delayed_claim) {
-            const res = await database.query(`INSERT INTO pending_kudos (unique_id, target_id, from_id, amount) VALUES ($1, $2, $3, $4) ON CONFLICT (unique_id) DO UPDATE SET amount = pending_kudos.amount + $4, updated_at = CURRENT_TIMESTAMP RETURNING *`, [`${target_user.id}_${u.id}`, target_user.id, u.id, emoji.amount]).catch(console.error)
-            if(res?.rowCount) {
+            const res = await database.upsertPendingKudos(`${target_user.id}_${u.id}`, target_user.id, u.id, emoji.amount || 1).catch(console.error)
+            if(res) {
                 await target_user.send({
                     embeds: [{
                         title: emoji.title ?? "Surprise",

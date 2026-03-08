@@ -63,11 +63,13 @@ The bot has the following features:
 - NodeJS >= 18.0.0
 
 Optional:  
-- PostgreSQL >= 14.6
+- PostgreSQL >= 14.6 or SQLite (local file)
 
 ## How to set up
 
 ### A detailed Linux setup can be found [here](https://github.com/ZeldaFan0225/AI_Horde_Discord/blob/main/DB_SETUP.md)
+
+SQLite support is intended for local, single-instance deployments and fresh SQLite databases only.
 
 1) download the code from this repository  
 2) get the token of your discord bot (https://discord.com/developers/docs/reference#authentication)  
@@ -76,7 +78,9 @@ Optional:
   
 If you want to have extra functionality do the following steps:  
 
-5) set up a postgres database  
+5) choose a database backend
+   - PostgreSQL: keep `"database.type": "postgres"` and set up a postgres database
+   - SQLite: set `"database.type": "sqlite"` and optionally change `"database.sqlite.path"`
 6) fill out the `template.env` and rename it to `.env`  
   
 If you just want to generate images with no token or the default token in the config.json file do the following steps:  

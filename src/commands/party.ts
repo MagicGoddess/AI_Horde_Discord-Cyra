@@ -144,20 +144,21 @@ export default class extends Command {
             if(ctx.client.config.advanced?.dev) console.log(shared_key_id)
         }
 
-        const party = await ctx.database.query(`INSERT INTO parties (channel_id, guild_id, creator_id, ends_at, style, width, height, award, recurring, shared_key, wordlist) VALUES ($1, $2, $3, CURRENT_TIMESTAMP + interval '${duration} day', $4, $5, $6, $7, $8, $9, $10) RETURNING *`, [
-            thread.id,
-            thread.guildId,
-            ctx.interaction.user.id,
-            style_raw.toLowerCase(),
-            override_width,
-            override_height,
+        const party = await ctx.database.createParty({
+            channel_id: thread.id,
+            guild_id: thread.guildId,
+            creator_id: ctx.interaction.user.id,
+            ends_at: new Date(Date.now() + (1000 * 60 * 60 * 24 * duration)),
+            style: style_raw.toLowerCase(),
+            width: override_width,
+            height: override_height,
             award,
             recurring,
-            shared_key_id,
+            shared_key: shared_key_id,
             wordlist
-        ]).catch(console.error)
+        }).catch(console.error)
 
-        if(!party?.rowCount) {
+        if(!party) {
             await thread.delete()
             return ctx.error({error: "Unable to start party"})
         }

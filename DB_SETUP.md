@@ -41,3 +41,12 @@ to get logged into PSQL to start with do `sudo -i -u postgres psql`
 - `GRANT USAGE, CREATE ON SCHEMA public TO aihordebot;` - and make sure the user can change the schema and set stuff up
 
 This setup guide was written by [thebwt](https://github.com/thebwt)
+
+# SQLite setup
+For SQLite, set `"database.type": "sqlite"` in `config.json`.
+
+- Optional: set `"database.sqlite.path"` if you do not want the default `./data/ai_horde.sqlite`
+- Leave the `DB_*` entries in `.env` empty
+- Start the bot normally; it will create the SQLite database file and schema automatically
+
+SQLite support is intended for local, single-instance deployments and fresh SQLite databases only.

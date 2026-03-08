@@ -120,25 +120,21 @@ export default class extends Command {
         }
 
         // Insert the new party row using current thread id
-        const party = await ctx.database.query(
-            `INSERT INTO parties (channel_id, guild_id, creator_id, ends_at, style, width, height, award, recurring, shared_key, wordlist)
-             VALUES ($1, $2, $3, CURRENT_TIMESTAMP + interval '${duration} day', $4, $5, $6, $7, $8, $9, $10)
-             RETURNING *`,
-            [
-                ctx.interaction.channelId,
-                ctx.interaction.guildId,
-                mentionedCreator,
-                styleRaw,
-                width,
-                height,
-                award,
-                recurring,
-                shared_key_id,
-                wordlist
-            ]
-        ).catch(console.error)
+        const party = await ctx.database.createParty({
+            channel_id: ctx.interaction.channelId,
+            guild_id: ctx.interaction.guildId!,
+            creator_id: mentionedCreator,
+            ends_at: new Date(Date.now() + (1000 * 60 * 60 * 24 * duration)),
+            style: styleRaw,
+            width,
+            height,
+            award,
+            recurring,
+            shared_key: shared_key_id,
+            wordlist
+        }).catch(console.error)
 
-        if(!party?.rowCount) return ctx.error({error: "Unable to revive party (DB insert failed)."})
+        if(!party) return ctx.error({error: "Unable to revive party (DB insert failed)."})
 
         // Announce the revived party in this thread
         const styleType = Array.isArray(styleObj) ? "category" : "style"

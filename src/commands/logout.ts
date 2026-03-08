@@ -23,7 +23,7 @@ export default class extends Command {
             content: "You don't have your ai horde token saved in our database",
             ephemeral: true
         })
-        await ctx.database.query("DELETE FROM user_tokens WHERE id=$1", [ctx.interaction.user.id])
+        await ctx.database.deleteUserToken(ctx.interaction.user.id)
         ctx.interaction.reply({
             content: "Deleted.",
             ephemeral: true

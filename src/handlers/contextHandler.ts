@@ -1,10 +1,10 @@
 import {AIHorde} from "@zeldafan0225/ai_horde";
 import { ApplicationCommandType, MessageContextMenuCommandInteraction, UserContextMenuCommandInteraction } from "discord.js";
-import { Pool } from "pg";
 import { AIHordeClient } from "../classes/client";
 import { ContextContext } from "../classes/contextContext";
+import { DatabaseAdapter } from "../types";
 
-export async function handleContexts(interaction: UserContextMenuCommandInteraction | MessageContextMenuCommandInteraction, client: AIHordeClient, database: Pool | undefined, ai_horde_manager: AIHorde) {
+export async function handleContexts(interaction: UserContextMenuCommandInteraction | MessageContextMenuCommandInteraction, client: AIHordeClient, database: DatabaseAdapter | undefined, ai_horde_manager: AIHorde) {
     const command = await client.contexts.getContext(interaction).catch(() => null)
     if(!command) return;
 

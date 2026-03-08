@@ -11,7 +11,6 @@ import {
     RESTPostAPIContextMenuApplicationCommandsJSONBody,
     UserContextMenuCommandInteraction
 } from "discord.js";
-import { Pool } from "pg";
 import { AIHordeClient } from "./classes/client";
 
 export enum StoreTypes {
@@ -43,7 +42,7 @@ export interface CustomIDInitOptions {
 export interface BaseContextInitOptions {
     interaction: Interaction,
     client: AIHordeClient,
-    database: Pool | undefined,
+    database: DatabaseAdapter | undefined,
     ai_horde_manager: AIHorde
 }
 
@@ -91,6 +90,67 @@ export interface Party {
     shared_key?: string,
     users: string[],
     wordlist: string[]
+}
+
+export interface UserTokenRecord {
+    index: number,
+    id: string,
+    token: string,
+    horde_id: number
+}
+
+export interface PendingKudosRecord {
+    index: number,
+    unique_id: string,
+    target_id: string,
+    from_id: string,
+    amount: number,
+    updated_at: Date
+}
+
+export interface DatabaseCounts {
+    user_tokens: number,
+    parties: number,
+    pending_kudos: number
+}
+
+export interface CreatePartyInput {
+    channel_id: string,
+    guild_id: string,
+    creator_id: string,
+    ends_at: Date,
+    style: string,
+    width: number | null,
+    height: number | null,
+    award: number,
+    recurring: boolean,
+    shared_key: string | null,
+    wordlist: string[]
+}
+
+export interface UpdatePartyInput {
+    ends_at?: Date,
+    style?: string,
+    width?: number | null,
+    height?: number | null
+}
+
+export interface DatabaseAdapter {
+    initialize(): Promise<void>,
+    getUserToken(user_id: string): Promise<UserTokenRecord | undefined>,
+    upsertUserToken(user_id: string, token: string, horde_id: number): Promise<UserTokenRecord | undefined>,
+    deleteUserToken(user_id: string): Promise<boolean>,
+    getUserTokenByHordeId(horde_id: number): Promise<UserTokenRecord | undefined>,
+    getParty(channel_id: string): Promise<Party | undefined>,
+    createParty(input: CreatePartyInput): Promise<Party | undefined>,
+    updateParty(channel_id: string, updates: UpdatePartyInput): Promise<Party | undefined>,
+    deleteParty(channel_id: string): Promise<Party | undefined>,
+    deleteExpiredParties(now?: Date): Promise<Party[]>,
+    recordPartyParticipant(channel_id: string, user_id: string): Promise<Party | undefined>,
+    upsertPendingKudos(unique_id: string, target_id: string, from_id: string, amount: number): Promise<PendingKudosRecord | undefined>,
+    claimPendingKudos(target_id: string): Promise<PendingKudosRecord[]>,
+    deleteExpiredPendingKudos(cutoff: Date): Promise<number>,
+    getCounts(): Promise<DatabaseCounts>
 }
 
 export interface LORAFetchResponse {
@@ -203,6 +263,12 @@ export interface HordeStyleData {
 
 export interface Config {
     use_database?: boolean,
+    database?: {
+        type?: "postgres" | "sqlite",
+        sqlite?: {
+            path?: string
+        }
+    },
     default_token?: string,
     apply_roles_to_worker_owners?: string[],
     apply_roles_to_trusted_users?: string[],

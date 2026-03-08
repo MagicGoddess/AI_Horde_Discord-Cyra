@@ -1,10 +1,10 @@
 import {AIHorde} from "@zeldafan0225/ai_horde";
 import { AnySelectMenuInteraction, ButtonInteraction, ComponentType, PermissionsBitField } from "discord.js";
-import { Pool } from "pg";
 import { AIHordeClient } from "../classes/client";
 import { ComponentContext } from "../classes/componentContext";
+import { DatabaseAdapter } from "../types";
 
-export async function handleComponents(interaction: ButtonInteraction | AnySelectMenuInteraction, client: AIHordeClient, database: Pool | undefined, ai_horde_manager: AIHorde) {
+export async function handleComponents(interaction: ButtonInteraction | AnySelectMenuInteraction, client: AIHordeClient, database: DatabaseAdapter | undefined, ai_horde_manager: AIHorde) {
     const command = await client.components.getComponent(interaction).catch(() => null)
     if(!command) return;
     if(!interaction.inCachedGuild()) return;

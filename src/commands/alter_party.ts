@@ -74,18 +74,16 @@ export default class extends Command {
             if(ctx.client.config.generate?.blacklisted_styles?.includes(styleRaw)) return ctx.error({error: "The chosen style or category is blacklisted"})
         }
 
-        const sets: string[] = []
-        const params: any[] = [ctx.interaction.channelId]
-        let idx = 2
-        if(dateInput) { sets.push(`ends_at=$${idx++}`); params.push(new Date(targetTimestamp!)) }
-        if(styleRaw) { sets.push(`style=$${idx++}`); params.push(styleRaw) }
-        if(width !== null && width !== undefined) { sets.push(`width=$${idx++}`); params.push(width) }
-        if(height !== null && height !== undefined) { sets.push(`height=$${idx++}`); params.push(height) }
         const updated = await ctx.database
-            .query(`UPDATE parties SET ${sets.join(", ")} WHERE channel_id=$1 RETURNING *`, params)
+            .updateParty(ctx.interaction.channelId, {
+                ...(dateInput ? {ends_at: new Date(targetTimestamp!)} : {}),
+                ...(styleRaw ? {style: styleRaw} : {}),
+                ...(width !== null && width !== undefined ? {width} : {}),
+                ...(height !== null && height !== undefined ? {height} : {})
+            })
             .catch(console.error)
 
-        if(!updated?.rowCount) return ctx.error({error: "Unable to alter party end date"})
+        if(!updated) return ctx.error({error: "Unable to alter party end date"})
 
         // Invalidate cache so subsequent reads fetch the updated party
         ctx.client.cache.delete(`party-${ctx.interaction.channelId}`)

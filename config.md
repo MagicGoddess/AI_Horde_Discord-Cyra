@@ -5,6 +5,12 @@ Here you can see an explanation of what which option does
 ```
 {
     "use_database": Set to false if you do not want to use a database *6,
+    "database": {
+        "type": Database backend to use ("postgres" or "sqlite"; default: "postgres"),
+        "sqlite": {
+            "path": Path to the sqlite database file when "database.type" is "sqlite" (STRING; default: "./data/ai_horde.sqlite")
+        }
+    },
     "default_token": The default token to use for requests if user is not logged in (STRING; recommended default: "0000000000"),
     "apply_roles_to_worker_owners": Roles to apply if the user has a worker running (ARRAY OF ROLE IDS),
     "apply_roles_to_trusted_users": Roles to apply if the useris trusted (ARRAY OF ROLE IDS),
@@ -230,6 +236,8 @@ Here you can see an explanation of what which option does
     }
 }
 ```
+
+When `database.type` is set to `"sqlite"`, the bot stores database data in a local file and ignores the `DB_*` environment variables. SQLite support is intended for fresh, local, single-instance deployments.
 
 `*1` See API Documentation for reference (https://aihorde.net/api)  
 `*2` Available Samplers: k_lms, k_heun, k_euler, k_euler_a, k_dpm_2, k_dpm_2_a, DDIM, PLMS, k_dpm_fast, k_dpm_adaptive, k_dpmpp_2s_a, k_dpmpp_2m, dpmsolver  

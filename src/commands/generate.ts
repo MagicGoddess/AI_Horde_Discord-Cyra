@@ -538,8 +538,8 @@ ETA: <t:${Math.floor(Date.now()/1000)+(status?.wait_time ?? 0)}:R>`
             if(!transfer?.transferred) return message.reply({content: "Unable to send you the reward"})
 
             await message.reply({allowedMentions: {parse: []}, content: `<@${ctx.interaction.user.id}>, the creator of the party <@${p.creator_id}> awarded you ${p.award} kudos for your ${p.recurring ? "" : "first "}generation.${p.recurring ? "\nIf you submit another generation you can claim the reward again" : "\nYou can not receive the reward again"}`})
-            const update = await ctx.database?.query("UPDATE parties SET users=array_append(array_remove(users, $2), $2) WHERE channel_id=$1 RETURNING *", [ctx.interaction.channelId, ctx.interaction.user.id])
-            if(update?.rowCount) ctx.client.cache.set(`party-${ctx.interaction.channelId}`, update.rows[0]!)
+            const update = await ctx.database?.recordPartyParticipant(ctx.interaction.channelId, ctx.interaction.user.id)
+            if(update) ctx.client.cache.set(`party-${ctx.interaction.channelId}`, update, 1000 * 60 * 20)
             return;
         }
     }
