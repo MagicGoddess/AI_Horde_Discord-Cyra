@@ -71,6 +71,11 @@ const command_data = new SlashCommandBuilder()
             .setName("pay_for_generations")
             .setDescription("Whether to pay for the generations users make")
         )
+        .addBooleanOption(
+            new SlashCommandBooleanOption()
+            .setName("advanced_generation_allowed")
+            .setDescription("Whether /advanced_generate is allowed in this party")
+        )
         .addStringOption(
             new SlashCommandStringOption()
             .setName("wordlist")
@@ -98,6 +103,7 @@ export default class extends Command {
         const duration = ctx.interaction.options.getInteger("duration", true)
         const recurring = !!(ctx.interaction.options.getBoolean("recurring") ?? ctx.client.config.party?.default?.recurring)
         const pay = !!(ctx.interaction.options.getBoolean("pay_for_generations") ?? ctx.client.config.party?.default?.pay_for_generations)
+        const advancedGenerateAllowed = !!(ctx.interaction.options.getBoolean("advanced_generation_allowed") ?? ctx.client.config.party?.default?.advanced_generation_allowed ?? false)
         const wordlist = (ctx.interaction.options.getString("wordlist") ?? "").split(",").map(w => w.trim().toLowerCase()).filter(w => w)
         const style_raw = ctx.interaction.options.getString("style") ?? ctx.client.config.generate?.default?.style ?? "raw"
         const style = ctx.client.horde_styles[style_raw.toLowerCase()] || ctx.client.horde_style_categories[style_raw.toLowerCase()]
@@ -154,6 +160,7 @@ export default class extends Command {
             height: override_height,
             award,
             recurring,
+            advanced_generate_allowed: advancedGenerateAllowed,
             shared_key: shared_key_id,
             wordlist
         }).catch(console.error)
@@ -164,7 +171,7 @@ export default class extends Command {
         }
 
         const start = await thread.send({
-            content: `<@${ctx.interaction.user.id}> started the party "${name}" with the ${Array.isArray(style) ? "category" : "style"} "${style_raw}".${override_width || override_height ? `\nResolution: ${override_width ?? "-"}x${override_height ?? "-"}` : ""}\nYou will get ${award} kudos for ${recurring ? `every generation` : `your first generation`}.\nThe party ends <t:${Math.round((Date.now() + 1000 * 60 * 60 * 24 * duration)/1000)}:R>${wordlist.length ? `\nThe prompt has to include the words: ${wordlist.join(",")}` : ""}${pay && shared_key_id ? "\nThe party creator will pay for all generations 🥳" : ""}\n\n${ctx.client.config.party.mention_roles?.length ? ctx.client.config.party.mention_roles.map(r => `<@&${r}>`).join(" ") : ""}`,
+            content: `<@${ctx.interaction.user.id}> started the party "${name}" with the ${Array.isArray(style) ? "category" : "style"} "${style_raw}".${override_width || override_height ? `\nResolution: ${override_width ?? "-"}x${override_height ?? "-"}` : ""}\nAdvanced generation: ${advancedGenerateAllowed ? "allowed" : "disabled"}\nYou will get ${award} kudos for ${recurring ? `every generation` : `your first generation`}.\nThe party ends <t:${Math.round((Date.now() + 1000 * 60 * 60 * 24 * duration)/1000)}:R>${wordlist.length ? `\nThe prompt has to include the words: ${wordlist.join(",")}` : ""}${pay && shared_key_id ? "\nThe party creator will pay for all generations 🥳" : ""}\n\n${ctx.client.config.party.mention_roles?.length ? ctx.client.config.party.mention_roles.map(r => `<@&${r}>`).join(" ") : ""}`,
             allowedMentions: {
                 users: [ctx.interaction.user.id],
                 roles: ctx.client.config.party.mention_roles

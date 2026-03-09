@@ -87,6 +87,7 @@ export interface Party {
     height?: number,
     award: number,
     recurring: boolean,
+    advanced_generate_allowed: boolean,
     shared_key?: string,
     users: string[],
     wordlist: string[]
@@ -124,6 +125,7 @@ export interface CreatePartyInput {
     height: number | null,
     award: number,
     recurring: boolean,
+    advanced_generate_allowed: boolean,
     shared_key: string | null,
     wordlist: string[]
 }
@@ -132,7 +134,8 @@ export interface UpdatePartyInput {
     ends_at?: Date,
     style?: string,
     width?: number | null,
-    height?: number | null
+    height?: number | null,
+    advanced_generate_allowed?: boolean
 }
 
 export interface DatabaseAdapter {
@@ -514,6 +517,7 @@ export interface Config {
         default?: {
             recurring?: boolean
             pay_for_generations?: boolean
+            advanced_generation_allowed?: boolean
         },
         user_restrictions?: {
             award?: {

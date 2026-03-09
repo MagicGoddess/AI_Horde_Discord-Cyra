@@ -96,6 +96,7 @@ export default class extends Command {
         // Wordlist
         const wordlistStr = content.match(/The prompt has to include the words:\s*(?<words>[^\n]+)/i)?.groups?.["words"]
         const wordlist = wordlistStr ? wordlistStr.split(",").map(w => w.trim().toLowerCase()).filter(Boolean) : []
+        const advancedGenerateAllowed = /Advanced generation:\s*allowed/i.test(content)
 
         // Pay for generations
         const pays = /will pay for all generations/i.test(content)
@@ -130,6 +131,7 @@ export default class extends Command {
             height,
             award,
             recurring,
+            advanced_generate_allowed: advancedGenerateAllowed,
             shared_key: shared_key_id,
             wordlist
         }).catch(console.error)
@@ -140,7 +142,7 @@ export default class extends Command {
         const styleType = Array.isArray(styleObj) ? "category" : "style"
         const endEpoch = Math.round((Date.now() + 1000 * 60 * 60 * 24 * duration) / 1000)
         const announce = await ctx.interaction.channel?.send({
-            content: `<@${mentionedCreator}> revived the party "${name}" with the ${styleType} "${styleRaw}".${(width || height) ? `\nResolution: ${width ?? "-"}x${height ?? "-"}` : ""}\nYou will get ${award} kudos for ${recurring ? `every generation` : `your first generation`}.\nThe party ends <t:${endEpoch}:R>${wordlist.length ? `\nThe prompt has to include the words: ${wordlist.join(",")}` : ""}${pays && shared_key_id ? "\nThe party creator will pay for all generations 🥳" : ""}\n\n${ctx.client.config.party?.mention_roles?.length ? ctx.client.config.party.mention_roles.map(r => `<@&${r}>`).join(" ") : ""}`,
+            content: `<@${mentionedCreator}> revived the party "${name}" with the ${styleType} "${styleRaw}".${(width || height) ? `\nResolution: ${width ?? "-"}x${height ?? "-"}` : ""}\nAdvanced generation: ${advancedGenerateAllowed ? "allowed" : "disabled"}\nYou will get ${award} kudos for ${recurring ? `every generation` : `your first generation`}.\nThe party ends <t:${endEpoch}:R>${wordlist.length ? `\nThe prompt has to include the words: ${wordlist.join(",")}` : ""}${pays && shared_key_id ? "\nThe party creator will pay for all generations 🥳" : ""}\n\n${ctx.client.config.party?.mention_roles?.length ? ctx.client.config.party.mention_roles.map(r => `<@&${r}>`).join(" ") : ""}`,
             allowedMentions: { users: [mentionedCreator], roles: ctx.client.config.party?.mention_roles }
         }).catch(console.error)
 

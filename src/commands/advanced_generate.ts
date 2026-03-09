@@ -1,7 +1,7 @@
 import { ActionRowData, AttachmentBuilder, ButtonBuilder, ChannelType, Colors, EmbedBuilder, InteractionButtonComponentData, SlashCommandAttachmentOption, SlashCommandBooleanOption, SlashCommandBuilder, SlashCommandIntegerOption, SlashCommandStringOption } from "discord.js";
 import { Command } from "../classes/command";
 import { CommandContext } from "../classes/commandContext";
-import { Config } from "../types";
+import { Config, HordeStyleData } from "../types";
 import {readFileSync} from "fs"
 import { AutocompleteContext } from "../classes/autocompleteContext";
 import Centra from "centra";
@@ -273,12 +273,14 @@ export default class extends Command {
 
         await ctx.interaction.deferReply({})
         let prompt = ctx.interaction.options.getString("prompt", true)
+        const party = await ctx.client.getParty(ctx.interaction.channelId, ctx.database)
         
-        const style_raw = ctx.interaction.options.getString("style") ?? ctx.client.config.advanced_generate?.default?.style
-        const style = ctx.client.horde_styles[style_raw?.toLowerCase() ?? ""] || {prompt: "{p}{np}"}
+        const requestedStyleRaw = ctx.interaction.options.getString("style")
+        const style_raw = party?.style ?? requestedStyleRaw ?? ctx.client.config.advanced_generate?.default?.style
+        const style: Partial<HordeStyleData> & {prompt: string} = ctx.client.getHordeStyle(style_raw ?? "") || {prompt: "{p}{np}"}
 
         const negative_prompt = ctx.interaction.options.getString("negative_prompt") ?? ""
-        const sampler = (ctx.interaction.options.getString("sampler") ?? ctx.client.config.advanced_generate?.default?.sampler ?? ModelGenerationInputStableSamplers.k_euler) as any
+        const sampler = (ctx.interaction.options.getString("sampler") ?? style.sampler_name ?? ctx.client.config.advanced_generate?.default?.sampler ?? ModelGenerationInputStableSamplers.k_euler) as any
         const cfg = ctx.interaction.options.getInteger("cfg") ?? style.cfg_scale ?? ctx.client.config.advanced_generate?.default?.cfg ?? 7.5
         const denoise = (ctx.interaction.options.getInteger("denoise") ?? ctx.client.config.advanced_generate?.default?.denoise ?? 50)/100
         const seed = ctx.interaction.options.getString("seed")
@@ -288,15 +290,17 @@ export default class extends Command {
         const tiling = !!(ctx.interaction.options.getBoolean("tiling") ?? ctx.client.config.advanced_generate?.default?.tiling)
         const steps = ctx.interaction.options.getInteger("steps") ?? style.steps ?? ctx.client.config.advanced_generate?.default?.steps ?? 30
         const amount = ctx.interaction.options.getInteger("amount") ?? ctx.client.config.advanced_generate?.default?.amount ?? 1
-        let height = ctx.interaction.options.getInteger("height") ?? style?.height ?? ctx.client.config.advanced_generate?.default?.resolution?.height ?? 512
-        let width = ctx.interaction.options.getInteger("width") ?? style?.width ?? ctx.client.config.advanced_generate?.default?.resolution?.width ?? 512
+        const requestedHeight = ctx.interaction.options.getInteger("height")
+        const requestedWidth = ctx.interaction.options.getInteger("width")
+        let height = requestedHeight ?? party?.height ?? style?.height ?? ctx.client.config.advanced_generate?.default?.resolution?.height ?? 512
+        let width = requestedWidth ?? party?.width ?? style?.width ?? ctx.client.config.advanced_generate?.default?.resolution?.width ?? 512
         const model = ctx.interaction.options.getString("model") ?? style?.model ?? ctx.client.config.advanced_generate?.default?.model
         const keep_ratio = ctx.interaction.options.getBoolean("keep_original_ratio") ?? ctx.client.config.advanced_generate?.default?.keep_original_ratio ?? true
         const karras = ctx.interaction.options.getBoolean("karras") ?? ctx.client.config.advanced_generate?.default?.karras ?? false
         const share_result = ctx.interaction.options.getBoolean("share_result") ?? ctx.client.config.advanced_generate?.default?.share
         const lora_id = ctx.interaction.options.getString("lora")
         const ti_raw = ctx.interaction.options.getString("textual_inversion") ?? ctx.client.config.advanced_generate.default?.tis
-        const hires_fix = ctx.interaction.options.getBoolean("hires_fix") ?? ctx.client.config.advanced_generate.default?.hires_fix
+        const hires_fix = ctx.interaction.options.getBoolean("hires_fix") ?? style.hires_fix ?? ctx.client.config.advanced_generate.default?.hires_fix
         const qr_code_url = ctx.interaction.options.getString("qr_code_url")
         const clipskip = ctx.interaction.options.getInteger("clip_skip") ?? style?.clip_skip ?? ctx.client.config.advanced_generate?.default?.clip_skip
         let img = ctx.interaction.options.getAttachment("source_image")
@@ -304,7 +308,6 @@ export default class extends Command {
         const user_token = await ctx.client.getUserToken(ctx.interaction.user.id, ctx.database)
         const ai_horde_user = await ctx.ai_horde_manager.findUser({token: user_token  || ctx.client.config?.default_token || "0000000000"}).catch((e) => ctx.client.config.advanced?.dev ? console.error(e) : null);
         const can_bypass = ctx.client.config.advanced_generate?.source_image?.whitelist?.bypass_checks && ctx.client.config.advanced_generate?.source_image?.whitelist?.user_ids?.includes(ctx.interaction.user.id)
-        const party = await ctx.client.getParty(ctx.interaction.channelId, ctx.database)
 
         if(lora_id) {
             const lora = await ctx.client.fetchLORAByID(lora_id, ctx.client.config.advanced_generate.user_restrictions?.allow_nsfw)
@@ -313,12 +316,16 @@ export default class extends Command {
             if(lora.type !== "LORA" && lora.type !== "LoCon") return ctx.error({error: "The given ID is not a LORA, LoCon or LyCORIS"})
             if(lora.modelVersions[0]?.files[0]?.sizeKB && lora.modelVersions[0]?.files[0]?.sizeKB > 225280 && !ctx.client.horde_curated_loras?.includes(lora.id)) return ctx.error({error: "The given LORA, LoCon or LyCORIS is larger than 220mb"})
         }
-        const lora_obj = lora_id ? [{
+        const lora_obj = [
+            ...(style?.loras ?? []),
+            ...(lora_id ? [{
                 "name": lora_id,
                 "inject_trigger": "all"
-            }] : style?.loras;
+            }] : [])
+        ];
 
-        if(party?.channel_id) return ctx.error({error: `You can only use ${await ctx.client.getSlashCommandTag("generate")} in parties`, codeblock: false})
+        if(party?.channel_id && !party.advanced_generate_allowed) return ctx.error({error: `You can only use ${await ctx.client.getSlashCommandTag("generate")} in parties unless advanced generation is enabled for that party`, codeblock: false})
+        if(party?.style && requestedStyleRaw && party.style !== requestedStyleRaw.toLowerCase()) return ctx.error({error: `Please use the style '${party.style}' for this party`})
         if(ctx.client.config.advanced_generate?.require_login && !user_token) return ctx.error({error: `You are required to ${await ctx.client.getSlashCommandTag("login")} to use ${await ctx.client.getSlashCommandTag("advanced_generate")}`, codeblock: false})
         if(ctx.client.config.advanced_generate?.blacklist_regex && new RegExp(ctx.client.config.advanced_generate.blacklist_regex, "i").test(prompt.replace(/[\u0300-\u036f]/g, ""))) return ctx.error({error: "Your prompt included one or more blacklisted words"})
         if(ctx.client.config.advanced_generate?.blacklisted_words?.some(w => prompt.toLowerCase().includes(w.toLowerCase()))) return ctx.error({error: "Your prompt included one or more blacklisted words"})
@@ -344,8 +351,8 @@ export default class extends Command {
             width = mod_width%64 <= 32 ? mod_width-(mod_width%64) : mod_width+(64-(mod_width%64))
         }
 
-        height = ctx.interaction.options.getInteger("height") ?? height
-        width = ctx.interaction.options.getInteger("width") ?? width
+        height = requestedHeight ?? height
+        width = requestedWidth ?? width
 
         if(ctx.client.config.advanced_generate.convert_a1111_weight_to_horde_weight) {
             prompt = prompt.replace(/(\(+|\[+)|(?<!:\d(\.\d+)?)(\)+|]+)/g, (w) => {
@@ -356,7 +363,10 @@ export default class extends Command {
             })
         }
 
-        const tis = ti_raw?.split(",").map(ti => ti.trim()).filter(v => v).map(ti => ({name: ti, inject_ti: prompt.toLowerCase().indexOf("embedding:") === -1 ? "prompt" as const : undefined}))
+        const tis = [
+            ...(style.tis ?? []),
+            ...(ti_raw?.split(",").map(ti => ti.trim()).filter(v => v).map(ti => ({name: ti, inject_ti: prompt.toLowerCase().indexOf("embedding:") === -1 ? "prompt" as const : undefined})) ?? [])
+        ]
         
         prompt = style.prompt.slice().replace("{p}", prompt)
         prompt = prompt.replace("{np}", !negative_prompt || prompt.includes("###") ? negative_prompt : `###${negative_prompt}`)
@@ -714,6 +724,8 @@ ETA: <t:${Math.floor(Date.now()/1000)+(status?.wait_time ?? 0)}:R>`
                 return await context.interaction.respond(steps.filter((v) => !inp.value || v.name.includes(inp.value)).slice(0,25))
             }
             case "style": {
+                const party = await context.client.getParty(context.interaction.channelId, context.database)
+                if(party) return context.interaction.respond([{name: party.style, value: party.style}])
                 const styles = Object.keys(context.client.horde_styles)
                 const available = styles.map(s => ({name: s, value: s}))
                 const ret = option.value ? available.filter(s => s.name.toLowerCase().includes(option.value.toLowerCase())) : available

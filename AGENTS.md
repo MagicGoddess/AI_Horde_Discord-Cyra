@@ -34,3 +34,4 @@
 - Never commit secrets. Populate `.env` from `template.env` and keep it local.
 - Generate and set `ENCRYPTION_KEY` if token encryption is enabled. Avoid rotating keys after deployment.
 - Database is optional; set `use_database` accordingly in `config.json`.
+- SQLite schema changes must include automatic backward-compatible migrations for existing installs; do not assume a fresh database.

@@ -16,6 +16,7 @@ type RawPartyRow = {
     height: number | null,
     award: number,
     recurring: boolean | number,
+    advanced_generate_allowed?: boolean | number | null,
     users: string[] | string | null,
     shared_key: string | null,
     wordlist: string[] | string | null
@@ -44,6 +45,7 @@ function normalizeParty(row: RawPartyRow | undefined): Party | undefined {
         height: row.height ?? undefined,
         award: row.award,
         recurring: typeof row.recurring === "boolean" ? row.recurring : !!row.recurring,
+        advanced_generate_allowed: typeof row.advanced_generate_allowed === "boolean" ? row.advanced_generate_allowed : !!row.advanced_generate_allowed,
         users: Array.isArray(row.users) ? row.users : parseStringArray(row.users),
         shared_key: row.shared_key ?? undefined,
         wordlist: Array.isArray(row.wordlist) ? row.wordlist : parseStringArray(row.wordlist)
@@ -80,9 +82,10 @@ class PostgresAdapter implements DatabaseAdapter {
 
     async initialize(): Promise<void> {
         await this.pool.query("CREATE TABLE IF NOT EXISTS user_tokens (index SERIAL, id VARCHAR(100) PRIMARY KEY, token VARCHAR(100) NOT NULL, horde_id int NOT NULL DEFAULT 0)");
-        await this.pool.query("CREATE TABLE IF NOT EXISTS parties (index SERIAL, channel_id VARCHAR(100) PRIMARY KEY, guild_id VARCHAR(100) NOT NULL, creator_id VARCHAR(100) NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, ends_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, style VARCHAR(1000) NOT NULL, width INT, height INT, award INT NOT NULL DEFAULT 1, recurring BOOLEAN NOT NULL DEFAULT false, users VARCHAR(100)[] NOT NULL DEFAULT '{}', shared_key VARCHAR(100), wordlist text[] NOT NULL DEFAULT '{}')");
+        await this.pool.query("CREATE TABLE IF NOT EXISTS parties (index SERIAL, channel_id VARCHAR(100) PRIMARY KEY, guild_id VARCHAR(100) NOT NULL, creator_id VARCHAR(100) NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, ends_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, style VARCHAR(1000) NOT NULL, width INT, height INT, award INT NOT NULL DEFAULT 1, recurring BOOLEAN NOT NULL DEFAULT false, advanced_generate_allowed BOOLEAN NOT NULL DEFAULT false, users VARCHAR(100)[] NOT NULL DEFAULT '{}', shared_key VARCHAR(100), wordlist text[] NOT NULL DEFAULT '{}')");
         await this.pool.query("ALTER TABLE parties ADD COLUMN IF NOT EXISTS width INT");
         await this.pool.query("ALTER TABLE parties ADD COLUMN IF NOT EXISTS height INT");
+        await this.pool.query("ALTER TABLE parties ADD COLUMN IF NOT EXISTS advanced_generate_allowed BOOLEAN NOT NULL DEFAULT false");
         await this.pool.query("CREATE TABLE IF NOT EXISTS pending_kudos (index SERIAL, unique_id VARCHAR(200) PRIMARY KEY, target_id VARCHAR(100) NOT NULL, from_id VARCHAR(100) NOT NULL, amount int NOT NULL, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)");
     }
 
@@ -113,15 +116,15 @@ class PostgresAdapter implements DatabaseAdapter {
 
     async createParty(input: CreatePartyInput): Promise<Party | undefined> {
         const result = await this.pool.query<RawPartyRow>(
-            "INSERT INTO parties (channel_id, guild_id, creator_id, ends_at, style, width, height, award, recurring, shared_key, wordlist) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *",
-            [input.channel_id, input.guild_id, input.creator_id, input.ends_at, input.style, input.width, input.height, input.award, input.recurring, input.shared_key, input.wordlist]
+            "INSERT INTO parties (channel_id, guild_id, creator_id, ends_at, style, width, height, award, recurring, advanced_generate_allowed, shared_key, wordlist) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *",
+            [input.channel_id, input.guild_id, input.creator_id, input.ends_at, input.style, input.width, input.height, input.award, input.recurring, input.advanced_generate_allowed, input.shared_key, input.wordlist]
         );
         return normalizeParty(result.rows[0]);
     }
 
     async updateParty(channel_id: string, updates: UpdatePartyInput): Promise<Party | undefined> {
         const sets: string[] = [];
-        const values: Array<Date | string | number | null> = [channel_id];
+        const values: Array<Date | string | number | boolean | null> = [channel_id];
         let index = 2;
         if("ends_at" in updates) {
             sets.push(`ends_at=$${index++}`);
@@ -138,6 +141,10 @@ class PostgresAdapter implements DatabaseAdapter {
         if("height" in updates) {
             sets.push(`height=$${index++}`);
             values.push(updates.height ?? null);
+        }
+        if("advanced_generate_allowed" in updates) {
+            sets.push(`advanced_generate_allowed=$${index++}`);
+            values.push(updates.advanced_generate_allowed ?? false);
         }
         if(!sets.length) return this.getParty(channel_id);
         const result = await this.pool.query<RawPartyRow>(`UPDATE parties SET ${sets.join(", ")} WHERE channel_id=$1 RETURNING *`, values);
@@ -212,6 +219,7 @@ class SqliteAdapter implements DatabaseAdapter {
                 height INTEGER,
                 award INTEGER NOT NULL DEFAULT 1,
                 recurring INTEGER NOT NULL DEFAULT 0,
+                advanced_generate_allowed INTEGER NOT NULL DEFAULT 0,
                 users TEXT NOT NULL DEFAULT '[]',
                 shared_key TEXT,
                 wordlist TEXT NOT NULL DEFAULT '[]'
@@ -225,6 +233,10 @@ class SqliteAdapter implements DatabaseAdapter {
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
         `);
+        const partyColumns = this.db.prepare("PRAGMA table_info(parties)").all() as {name: string}[];
+        if(!partyColumns.some(column => column.name === "advanced_generate_allowed")) {
+            this.db.prepare("ALTER TABLE parties ADD COLUMN advanced_generate_allowed INTEGER NOT NULL DEFAULT 0").run();
+        }
     }
 
     async getUserToken(user_id: string): Promise<UserTokenRecord | undefined> {
@@ -258,8 +270,8 @@ class SqliteAdapter implements DatabaseAdapter {
 
     async createParty(input: CreatePartyInput): Promise<Party | undefined> {
         this.db.prepare(`
-            INSERT INTO parties (channel_id, guild_id, creator_id, ends_at, style, width, height, award, recurring, users, shared_key, wordlist)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO parties (channel_id, guild_id, creator_id, ends_at, style, width, height, award, recurring, advanced_generate_allowed, users, shared_key, wordlist)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
             input.channel_id,
             input.guild_id,
@@ -270,6 +282,7 @@ class SqliteAdapter implements DatabaseAdapter {
             input.height,
             input.award,
             input.recurring ? 1 : 0,
+            input.advanced_generate_allowed ? 1 : 0,
             JSON.stringify([]),
             input.shared_key,
             JSON.stringify(input.wordlist)
@@ -295,6 +308,10 @@ class SqliteAdapter implements DatabaseAdapter {
         if("height" in updates) {
             sets.push("height = ?");
             values.push(updates.height ?? null);
+        }
+        if("advanced_generate_allowed" in updates) {
+            sets.push("advanced_generate_allowed = ?");
+            values.push(updates.advanced_generate_allowed ? 1 : 0);
         }
         if(!sets.length) return this.getParty(channel_id);
         this.db.prepare(`UPDATE parties SET ${sets.join(", ")} WHERE channel_id = ?`).run(...values, channel_id);

@@ -4,25 +4,27 @@ A personal fork of ZeldaFan0225/AI_Horde_Discord, with added features.
 
 ## Changes in this Fork
 
-- New command `/alter_party`: Change a party's end date, style, and/or resolution.
+- New command `/alter_party`: Change a party's end date, style, resolution, and advanced generation setting.
   - Only the party creator can run it (same permissions as `/end_party`).
   - Optional argument `date`: ISO datetime (e.g. `2025-12-31T23:59:59Z`) or UNIX timestamp (seconds or milliseconds). Must be in the future if provided.
   - Optional argument `style`: a valid style or category name; validates against configured lists and blacklists.
   - Optional arguments `width` and `height`: override the party's generation resolution (px). You can set one or both.
-  - At least one of `date` or `style` is required; the command errors if neither is provided.
-  - Announces changes in the party thread and attempts to update the initial pinned message to reflect the new end time, style, and/or resolution.
+  - Optional argument `advanced_generation_allowed`: allows `/advanced_generate` inside the party when enabled.
+  - At least one option is required; the command errors if none are provided.
+  - Announces changes in the party thread and attempts to update the initial pinned message to reflect the new end time, style, resolution, and advanced generation setting.
   - Can revive an already expired party as long as it still exists in the database (i.e., not yet cleaned up or ended).
   - Note: This does not update any associated shared key expiry.
 - New command `/party_revive`: Revive a purged party using its pinned settings.
   - Use inside the original party thread after it was purged from the DB (clean-up or manual end+purge).
   - Required argument `duration` (days) for how long the revived party should last.
-  - Parses the first pinned party announcement to restore: creator, name, style/category, resolution (if any), kudos award, recurring flag, wordlist, and whether the creator paid for generations.
+  - Parses the first pinned party announcement to restore: creator, name, style/category, resolution (if any), kudos award, recurring flag, advanced generation setting, wordlist, and whether the creator paid for generations.
   - If the original party paid for generations, the creator must be logged in so a new shared key can be created.
   - If a party already exists in the thread, it will ask you to use `/alter_party` instead.
   - Posts and pins a fresh announcement reflecting the new end time.
 - Database backend support now includes SQLite next to PostgreSQL.
   - Select the backend with `database.type` in `config.json`.
   - SQLite uses a local file at `database.sqlite.path` and is intended for fresh, single-instance deployments.
+  - Existing SQLite databases are migrated automatically on startup when new party columns are added.
   - Runtime database files under `data/` are ignored by git.
 - Progressive generation previews: `/generate` and `/advanced_generate` now attach completed images to the same generation message as soon as each image is finished, instead of waiting for the full batch.
 - Generation timing: `/generate`, `/advanced_generate`, and remix now show how long a generation took when it completes successfully, and include elapsed time in system/API failure messages.
@@ -56,7 +58,9 @@ The bot has the following features:
 - /interrogate to interrogate any image
 - /party to start a generation party with a given style
   - Optional `width`/`height` parameters let you override the chosen style's default resolution for the entire party.
-  - `/alter_party` can adjust end date/style/resolution; `/party_revive` can restore a purged party from its pinned announcement.
+  - Optional `advanced_generation_allowed` lets the party creator permit `/advanced_generate` in that thread. It defaults to `party.default.advanced_generation_allowed`, or `false` if unset.
+  - When `/advanced_generate` is allowed in a party, the party style stays locked and mandatory prompt words still apply just like `/generate`.
+  - `/alter_party` can adjust end date/style/resolution/advanced generation; `/party_revive` can restore a purged party from its pinned announcement.
 - "Remix" to edit another discord users avatar 
 - "Caption" to caption anozher discord users avatar
 - advanced configuration file which lets you change how the bot behaves and what actions the user can use (for limits refer to https://aihorde.net/api)

@@ -259,7 +259,8 @@
         ],
         "default": {
             "recurring": false,
-            "pay_for_generations": false
+            "pay_for_generations": false,
+            "advanced_generation_allowed": false
         },
         "user_restrictions": {
             "award": {

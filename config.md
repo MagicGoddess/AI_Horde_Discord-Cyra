@@ -212,7 +212,8 @@ Here you can see an explanation of what which option does
         "mention_roles": The roles to mention when a party is started (ARRAY OF ROLE IDS),
         "default": {
             "recurring": The default for recurring awards (BOOLEAN),
-            "pay_for_generations": The default for paying for generations (BOOLEAN)
+            "pay_for_generations": The default for paying for generations (BOOLEAN),
+            "advanced_generation_allowed": Whether parties allow `/advanced_generate` by default (BOOLEAN)
         },
         "user_restrictions": {
             "award": {
