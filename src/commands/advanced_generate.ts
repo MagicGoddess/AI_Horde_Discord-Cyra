@@ -710,12 +710,13 @@ ETA: <t:${Math.floor(Date.now()/1000)+(status?.wait_time ?? 0)}:R>`
 
     override async autocomplete(context: AutocompleteContext): Promise<any> {
         const option = context.interaction.options.getFocused(true)
+        const clampChoiceName = (name: string) => name.length <= 100 ? name : `${name.slice(0, 97)}...`
         switch(option.name) {
             case "model": {
                 const models = await context.ai_horde_manager.getModels()
                 if(context.client.config.advanced?.dev) console.log(models)
-                const available = [{name: "Any Model", value: "YOLO"}, ...models.sort((a, b) => b.performance!-a.performance!).map(m => ({name: `${m.name} | Workers: ${m.count} | Performance: ${m.performance} | Queued: ${m.queued}`, value: m.name!}))].filter(v => !context.client.config.advanced_generate?.blacklisted_models?.includes(v.value)).filter(v => !option.value || v.name.toLowerCase().includes(option.value.toLowerCase()))
-                return await context.interaction.respond(available.filter(o => o.name?.toLowerCase().includes(option.value.toLowerCase())).slice(0,25))
+                const available = [{name: "Any Model", value: "YOLO"}, ...models.sort((a, b) => b.performance!-a.performance!).map(m => ({name: clampChoiceName(`${m.name} | Workers: ${m.count} | Performance: ${m.performance} | Queued: ${m.queued}`), value: m.name!}))].filter(v => !context.client.config.advanced_generate?.blacklisted_models?.includes(v.value)).filter(v => !option.value || v.name.toLowerCase().includes(option.value.toLowerCase()) || v.value.toLowerCase().includes(option.value.toLowerCase()))
+                return await context.interaction.respond(available.filter(o => o.name?.toLowerCase().includes(option.value.toLowerCase()) || o.value.toLowerCase().includes(option.value.toLowerCase())).slice(0,25))
             }
             case "width":
             case "height": {
@@ -725,10 +726,10 @@ ETA: <t:${Math.floor(Date.now()/1000)+(status?.wait_time ?? 0)}:R>`
             }
             case "style": {
                 const party = await context.client.getParty(context.interaction.channelId, context.database)
-                if(party) return context.interaction.respond([{name: party.style, value: party.style}])
+                if(party) return context.interaction.respond([{name: clampChoiceName(party.style), value: party.style}])
                 const styles = Object.keys(context.client.horde_styles)
-                const available = styles.map(s => ({name: s, value: s}))
-                const ret = option.value ? available.filter(s => s.name.toLowerCase().includes(option.value.toLowerCase())) : available
+                const available = styles.map(s => ({name: clampChoiceName(s), value: s}))
+                const ret = option.value ? available.filter(s => s.name.toLowerCase().includes(option.value.toLowerCase()) || s.value.toLowerCase().includes(option.value.toLowerCase())) : available
                 return await context.interaction.respond(ret.slice(0,25))
             }
             case "lora": {
@@ -738,7 +739,7 @@ ETA: <t:${Math.floor(Date.now()/1000)+(status?.wait_time ?? 0)}:R>`
                     const lora_by_id = await context.client.fetchLORAByID(option.value, context.client.config.advanced_generate?.user_restrictions?.allow_nsfw)
 
                     if(lora_by_id?.name && (lora_by_id?.modelVersions[0]?.files[0]?.sizeKB && (lora_by_id?.modelVersions[0]?.files[0]?.sizeKB <= 225280 || context.client.horde_curated_loras?.includes(lora_by_id.id)))) ret.push({
-                        name: lora_by_id.name,
+                        name: clampChoiceName(lora_by_id.name),
                         value: lora_by_id.id.toString()
                     })
                 } else {
@@ -746,7 +747,7 @@ ETA: <t:${Math.floor(Date.now()/1000)+(status?.wait_time ?? 0)}:R>`
     
                     ret.push(
                         ...loras.items.filter(l => l?.name && l?.id.toString()).map(l => ({
-                            name: l!.name,
+                            name: clampChoiceName(l!.name),
                             value: l!.id.toString()
                         }))
                     )

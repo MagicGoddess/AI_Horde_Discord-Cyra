@@ -168,6 +168,7 @@ export default class extends Command {
 
     override async autocomplete(context: AutocompleteContext): Promise<any> {
         const option = context.interaction.options.getFocused(true)
+        const clampChoiceName = (name: string) => name.length <= 100 ? name : `${name.slice(0, 97)}...`
         switch(option.name) {
             case "width":
             case "height": {
@@ -178,8 +179,8 @@ export default class extends Command {
             case "style": {
                 const styles = Object.keys(context.client.horde_styles)
                 const categories = Object.keys(context.client.horde_style_categories)
-                const available = [...styles.map(s => ({name: `Style: ${s}`, value: s})), ...categories.map(s => ({name: `Category: ${s}`, value: s}))]
-                const ret = option.value ? available.filter(s => s.value.toLowerCase().includes(String(option.value).toLowerCase())) : available
+                const available = [...styles.map(s => ({name: clampChoiceName(`Style: ${s}`), value: s})), ...categories.map(s => ({name: clampChoiceName(`Category: ${s}`), value: s}))]
+                const ret = option.value ? available.filter(s => s.value.toLowerCase().includes(String(option.value).toLowerCase()) || s.name.toLowerCase().includes(String(option.value).toLowerCase())) : available
                 return await context.interaction.respond(ret.slice(0,25))
             }
         }
