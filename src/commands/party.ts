@@ -1,4 +1,4 @@
-import { ChannelType, SlashCommandBooleanOption, SlashCommandBuilder, SlashCommandIntegerOption, SlashCommandStringOption, ThreadAutoArchiveDuration } from "discord.js";
+import { ChannelType, PermissionFlagsBits, SlashCommandBooleanOption, SlashCommandBuilder, SlashCommandIntegerOption, SlashCommandStringOption, ThreadAutoArchiveDuration } from "discord.js";
 import { AutocompleteContext } from "../classes/autocompleteContext";
 import { Command } from "../classes/command";
 import { CommandContext } from "../classes/commandContext";
@@ -178,8 +178,9 @@ export default class extends Command {
             }
         }).catch(console.error)
 
-        await start?.pin().catch(console.error)
-        await ctx.interaction.editReply({content: start?.id ? "Party started" : "Failed to announce party"})
+        const canPin = !!start && !!thread.permissionsFor(ctx.client.user?.id || "")?.has(PermissionFlagsBits.ManageMessages)
+        if(canPin) await start.pin().catch(console.error)
+        await ctx.interaction.editReply({content: start?.id ? (canPin ? "Party started" : "Party started, but I could not pin the announcement (missing permission).") : "Failed to announce party"})
     }
 
     override async autocomplete(context: AutocompleteContext): Promise<any> {

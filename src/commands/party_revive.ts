@@ -1,4 +1,4 @@
-import { ChannelType, SlashCommandBuilder, SlashCommandIntegerOption } from "discord.js";
+import { ChannelType, PermissionFlagsBits, SlashCommandBuilder, SlashCommandIntegerOption } from "discord.js";
 import { Command } from "../classes/command";
 import { CommandContext } from "../classes/commandContext";
 import { Config } from "../types";
@@ -146,8 +146,9 @@ export default class extends Command {
             allowedMentions: { users: [mentionedCreator], roles: ctx.client.config.party?.mention_roles }
         }).catch(console.error)
 
-        await announce?.pin().catch(console.error)
+        const canPin = !!announce && !!ctx.interaction.channel?.permissionsFor(ctx.client.user?.id || "")?.has(PermissionFlagsBits.ManageMessages)
+        if(canPin) await announce.pin().catch(console.error)
 
-        await ctx.interaction.editReply({content: announce?.id ? "Party revived." : "Party revived in DB, but failed to announce."})
+        await ctx.interaction.editReply({content: announce?.id ? (canPin ? "Party revived." : "Party revived, but I could not pin the announcement (missing permission).") : "Party revived in DB, but failed to announce."})
     }
 }
