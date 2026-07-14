@@ -200,7 +200,7 @@ export class AIHordeClient extends Client {
 		const res: LORAFetchResponse = await fetch(`https://civitai.com/api/v1/models?types=LORA&limit=${amount}&nsfw=${nsfw}&query=${encodeURIComponent(query)}`, {
 			method: "GET",
 			headers: {
-				"User-Agent": `ZeldaFan-Discord-Bot:${this.bot_version}:https://github.com/ZeldaFan0225/AI_Horde_Discord`
+				"User-Agent": `ZeldaFan-Discord-Bot:${this.bot_version}:https://github.com/MagicGoddess/AI_Horde_Discord-Cyra`
 			}
 		}).then(res => res.json())
 
@@ -213,7 +213,7 @@ export class AIHordeClient extends Client {
 		const res = await fetch(`https://civitai.com/api/v1/models/${id}`, {
 			method: "GET",
 			headers: {
-				"User-Agent": `ZeldaFan-Discord-Bot:${this.bot_version}:https://github.com/ZeldaFan0225/AI_Horde_Discord`
+				"User-Agent": `ZeldaFan-Discord-Bot:${this.bot_version}:https://github.com/MagicGoddess/AI_Horde_Discord-Cyra`
 			}
 		})
 		

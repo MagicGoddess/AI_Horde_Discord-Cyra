@@ -2,6 +2,8 @@
 
 A personal fork of ZeldaFan0225/AI_Horde_Discord, with added features.
 
+> **Disclaimer:** This fork uses AI-generated code and has not been thoroughly tested. Use it at your own risk.
+
 ## Changes in this Fork
 
 - New command `/alter_party`: Change a party's end date, style, resolution, and advanced generation setting.
@@ -56,7 +58,7 @@ THE SCALE OF A BOT USING THIS CODE IS 1 SERVER, EVERYTHING ABOVE IS NOT SUPPORTE
 
 ## Features
 
-View [the changelog](https://github.com/ZeldaFan0225/AI_Horde_Discord/blob/main/changelog.md) to see what has been added
+View [the changelog](changelog.md) to see what has been added
 
 This package includes the code for a discord bot which interacts with the ai horde api.
 The bot has the following features:
@@ -92,7 +94,7 @@ Optional:
 
 ## How to set up
 
-### A detailed Linux setup can be found [here](https://github.com/ZeldaFan0225/AI_Horde_Discord/blob/main/DB_SETUP.md)
+### A detailed Linux setup can be found [here](DB_SETUP.md)
 
 SQLite support is intended for local, single-instance deployments. Required tables and additive schema changes are initialized automatically on startup.
 
@@ -114,7 +116,7 @@ If you just want to generate images with no token or the default token in the co
 6) fill out the `template.env` and rename it to `.env` (you can leave the keys prefixed with `DB_` empty)  
   
 7) Run `npm run generate-key` and copy the generated encryption key in your `.env` (If you disabled token encryption you can leave it blank)
-8) modify the [config.json](https://github.com/ZeldaFan0225/AI_Horde_Discord/blob/main/template.config.json) file (from step 4) to fit your needs (you can read about what which property does in [config.md](https://github.com/ZeldaFan0225/AI_Horde_Discord/blob/main/config.md))  
+8) modify the [config.json](template.config.json) file (from step 4) to fit your needs (you can read about what which property does in [config.md](config.md))
 9) compile the code and start the process (this can be done by using `npm run deploy`)  
   
 Now if everything is set up it should start and give an output in the console.  
@@ -130,4 +132,4 @@ Disabling encryption at any point will make commands for users who saved their t
 ## How to update
 
 1) Pull the code from this repository
-2) Update your config. Reading through the [changelog](https://github.com/ZeldaFan0225/AI_Horde_Discord/blob/main/changelog.md) might help.
+2) Update your config. Reading through the [changelog](changelog.md) might help.

@@ -10,14 +10,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ZeldaFan0225/AI_Horde_Discord.git"
+    "url": "git+https://github.com/MagicGoddess/AI_Horde_Discord-Cyra.git"
   },
   "author": "",
-  "license": "ISC",
+  "license": "AGPL-3.0-only",
   "bugs": {
-    "url": "https://github.com/ZeldaFan0225/AI_Horde_Discord/issues"
+    "url": "https://github.com/MagicGoddess/AI_Horde_Discord-Cyra/issues"
   },
-  "homepage": "https://github.com/ZeldaFan0225/AI_Horde_Discord#readme",
+  "homepage": "https://github.com/MagicGoddess/AI_Horde_Discord-Cyra#readme",
   "dependencies": {
     "@thunder04/supermap": "^3.0.2",
     "@zeldafan0225/ai_horde": "^5.1.0",

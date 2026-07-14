@@ -68,7 +68,7 @@ const ai_horde_manager = new AIHorde({
         performance: 1000 * 10,
         teams: 1000 * 10
     },
-    client_agent: `ZeldaFan-Discord-Bot:${client.bot_version}:https://github.com/ZeldaFan0225/AI_Horde_Discord`
+    client_agent: `ZeldaFan-Discord-Bot:${client.bot_version}:https://github.com/MagicGoddess/AI_Horde_Discord-Cyra`
 })
 
 if(client.config.logs?.enabled) {
