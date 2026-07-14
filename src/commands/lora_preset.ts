@@ -5,11 +5,13 @@ import {
     SlashCommandBuilder,
     SlashCommandStringOption
 } from "discord.js";
+import { randomUUID } from "crypto";
 import { Command } from "../classes/command";
 import { AutocompleteContext } from "../classes/autocompleteContext";
 import { CommandContext } from "../classes/commandContext";
 import { createLoraPresetSession, normalizePresetName, renderLoraPresetEditor, validatePresetName } from "../loraPresets";
 import { LoraPreset } from "../types";
+import { getSharedPresetValidationError } from "../loraPresetSharing";
 
 const command_data = new SlashCommandBuilder()
     .setName("lora_preset")
@@ -35,6 +37,14 @@ const command_data = new SlashCommandBuilder()
     .addSubcommand(subcommand => subcommand
         .setName("list")
         .setDescription("List your LoRA presets"))
+    .addSubcommand(subcommand => subcommand
+        .setName("share")
+        .setDescription("Share one of your LoRA presets in this channel")
+        .addStringOption(new SlashCommandStringOption()
+            .setName("preset")
+            .setDescription("The preset to share")
+            .setAutocomplete(true)
+            .setRequired(true)))
     .addSubcommand(subcommand => subcommand
         .setName("delete")
         .setDescription("Delete one of your LoRA presets")
@@ -97,6 +107,53 @@ export default class extends Command {
         if(subcommand === "edit") {
             const session = createLoraPresetSession(ctx.interaction.user.id, preset.name, preset);
             return ctx.interaction.reply({...renderLoraPresetEditor(session, maxLoras(ctx)), ephemeral: true});
+        }
+
+        if(subcommand === "share") {
+            const validationError = getSharedPresetValidationError(
+                preset,
+                maxLoras(ctx),
+                !!ctx.client.config.advanced_generate?.user_restrictions?.allow_nsfw
+            );
+            if(validationError) return ctx.error({error: validationError, codeblock: false, ephemeral: true});
+            await ctx.interaction.deferReply({});
+            const share = await ctx.database!.saveLoraPresetShare({
+                id: randomUUID(),
+                creator_id: ctx.interaction.user.id,
+                name: preset.name,
+                items: preset.items.map(({position: _position, ...item}) => ({...item}))
+            }).catch(error => {
+                if(ctx.client.config.advanced?.dev) console.error(error);
+                return undefined;
+            });
+            if(!share) return ctx.error({error: "Unable to create the shared preset. Please try again.", codeblock: false});
+
+            const loraLines = share.items.map((item, index) => {
+                const loraName = item.lora_name.length <= 100 ? item.lora_name : `${item.lora_name.slice(0, 97)}...`;
+                return `${index + 1}. **${loraName}** — ID \`${item.lora_id}\` — strength \`${item.strength}\``;
+            });
+            const description = [
+                `Shared by **${ctx.interaction.user.displayName}**`,
+                share.items.some(item => item.nsfw) ? "⚠️ Contains one or more NSFW LoRAs." : undefined,
+                "",
+                ...loraLines
+            ].filter(line => line !== undefined).join("\n").slice(0, 4096);
+            const copy = new ButtonBuilder()
+                .setCustomId(`shared_lora_preset_copy_${share.id}`)
+                .setLabel("Copy to my presets")
+                .setStyle(ButtonStyle.Primary);
+            const remove = new ButtonBuilder()
+                .setCustomId(`shared_lora_preset_delete_${ctx.interaction.user.id}_${share.id}`)
+                .setLabel("Delete message")
+                .setStyle(ButtonStyle.Danger);
+            return ctx.interaction.editReply({
+                embeds: [new EmbedBuilder()
+                    .setTitle(`Shared LoRA Preset: ${share.name}`)
+                    .setDescription(description)
+                    .setFooter({text: `${share.items.length} LoRA${share.items.length === 1 ? "" : "s"} • Immutable snapshot`})],
+                components: [{type: 1, components: [copy.toJSON(), remove.toJSON()]}],
+                allowedMentions: {parse: []}
+            });
         }
 
         if(subcommand === "delete") {

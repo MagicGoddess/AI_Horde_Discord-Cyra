@@ -2,7 +2,7 @@ import { existsSync, mkdirSync } from "fs";
 import path from "path";
 import Database from "better-sqlite3";
 import { Pool } from "pg";
-import { Config, CreatePartyInput, DatabaseAdapter, DatabaseCounts, LoraPreset, LoraPresetItem, Party, PendingKudosRecord, SaveLoraPresetInput, UpdatePartyInput, UserTokenRecord } from "./types";
+import { Config, CreatePartyInput, DatabaseAdapter, DatabaseCounts, LoraPreset, LoraPresetItem, LoraPresetShare, Party, PendingKudosRecord, SaveLoraPresetInput, SaveLoraPresetShareInput, UpdatePartyInput, UserTokenRecord } from "./types";
 
 type RawPartyRow = {
     index: number,
@@ -38,6 +38,15 @@ type RawLoraPresetRow = Omit<LoraPreset, "created_at" | "updated_at" | "items"> 
 
 type RawLoraPresetItemRow = Omit<LoraPresetItem, "nsfw"> & {
     preset_id: string,
+    nsfw: boolean | number
+}
+
+type RawLoraPresetShareRow = Omit<LoraPresetShare, "created_at" | "items"> & {
+    created_at: string | Date
+}
+
+type RawLoraPresetShareItemRow = Omit<LoraPresetItem, "nsfw"> & {
+    share_id: string,
     nsfw: boolean | number
 }
 
@@ -82,6 +91,17 @@ function normalizeLoraPreset(row: RawLoraPresetRow, items: RawLoraPresetItemRow[
     };
 }
 
+function normalizeLoraPresetShare(row: RawLoraPresetShareRow, items: RawLoraPresetShareItemRow[]): LoraPresetShare {
+    return {
+        ...row,
+        created_at: row.created_at instanceof Date ? row.created_at : new Date(row.created_at),
+        items: items
+            .filter(item => item.share_id === row.id)
+            .sort((a, b) => a.position - b.position)
+            .map(({share_id: _share_id, ...item}) => ({...item, nsfw: typeof item.nsfw === "boolean" ? item.nsfw : !!item.nsfw}))
+    };
+}
+
 function parseStringArray(value: string | null | undefined): string[] {
     if(!value) return [];
     try {
@@ -111,6 +131,8 @@ class PostgresAdapter implements DatabaseAdapter {
         await this.pool.query("CREATE TABLE IF NOT EXISTS pending_kudos (index SERIAL, unique_id VARCHAR(200) PRIMARY KEY, target_id VARCHAR(100) NOT NULL, from_id VARCHAR(100) NOT NULL, amount int NOT NULL, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)");
         await this.pool.query("CREATE TABLE IF NOT EXISTS lora_presets (id VARCHAR(36) PRIMARY KEY, owner_id VARCHAR(100) NOT NULL, name VARCHAR(50) NOT NULL, normalized_name VARCHAR(50) NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(owner_id, normalized_name))");
         await this.pool.query("CREATE TABLE IF NOT EXISTS lora_preset_items (preset_id VARCHAR(36) NOT NULL REFERENCES lora_presets(id) ON DELETE CASCADE, position INT NOT NULL, lora_id INT NOT NULL, lora_name VARCHAR(255) NOT NULL, base_model VARCHAR(255), nsfw BOOLEAN NOT NULL DEFAULT false, strength REAL NOT NULL DEFAULT 1, PRIMARY KEY(preset_id, position), UNIQUE(preset_id, lora_id))");
+        await this.pool.query("CREATE TABLE IF NOT EXISTS lora_preset_shares (id VARCHAR(36) PRIMARY KEY, creator_id VARCHAR(100) NOT NULL, name VARCHAR(50) NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)");
+        await this.pool.query("CREATE TABLE IF NOT EXISTS lora_preset_share_items (share_id VARCHAR(36) NOT NULL REFERENCES lora_preset_shares(id) ON DELETE CASCADE, position INT NOT NULL, lora_id INT NOT NULL, lora_name VARCHAR(255) NOT NULL, base_model VARCHAR(255), nsfw BOOLEAN NOT NULL DEFAULT false, strength REAL NOT NULL DEFAULT 1, PRIMARY KEY(share_id, position), UNIQUE(share_id, lora_id))");
     }
 
     async getUserToken(user_id: string): Promise<UserTokenRecord | undefined> {
@@ -250,6 +272,39 @@ class PostgresAdapter implements DatabaseAdapter {
         return (result.rowCount || 0) > 0;
     }
 
+    async saveLoraPresetShare(input: SaveLoraPresetShareInput): Promise<LoraPresetShare | undefined> {
+        const client = await this.pool.connect();
+        try {
+            await client.query("BEGIN");
+            await client.query("INSERT INTO lora_preset_shares (id, creator_id, name) VALUES ($1, $2, $3)", [input.id, input.creator_id, input.name]);
+            for(const [position, item] of input.items.entries()) {
+                await client.query(
+                    "INSERT INTO lora_preset_share_items (share_id, position, lora_id, lora_name, base_model, nsfw, strength) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                    [input.id, position, item.lora_id, item.lora_name, item.base_model ?? null, item.nsfw, item.strength]
+                );
+            }
+            await client.query("COMMIT");
+        } catch(error) {
+            await client.query("ROLLBACK");
+            throw error;
+        } finally {
+            client.release();
+        }
+        return this.getLoraPresetShare(input.id);
+    }
+
+    async getLoraPresetShare(id: string): Promise<LoraPresetShare | undefined> {
+        const share = await this.pool.query<RawLoraPresetShareRow>("SELECT * FROM lora_preset_shares WHERE id=$1", [id]);
+        if(!share.rows[0]) return undefined;
+        const items = await this.pool.query<RawLoraPresetShareItemRow>("SELECT * FROM lora_preset_share_items WHERE share_id=$1 ORDER BY position", [id]);
+        return normalizeLoraPresetShare(share.rows[0], items.rows);
+    }
+
+    async deleteLoraPresetShare(id: string, creator_id: string): Promise<boolean> {
+        const result = await this.pool.query("DELETE FROM lora_preset_shares WHERE id=$1 AND creator_id=$2", [id, creator_id]);
+        return (result.rowCount || 0) > 0;
+    }
+
     async getCounts(): Promise<DatabaseCounts> {
         const result = await this.pool.query<DatabaseCounts>("SELECT (SELECT COUNT(*) FROM user_tokens) as user_tokens, (SELECT COUNT(*) FROM parties) as parties, (SELECT COUNT(*) FROM pending_kudos) as pending_kudos, (SELECT COUNT(*) FROM lora_presets) as lora_presets");
         return {
@@ -321,6 +376,23 @@ class SqliteAdapter implements DatabaseAdapter {
                 strength REAL NOT NULL DEFAULT 1,
                 PRIMARY KEY(preset_id, position),
                 UNIQUE(preset_id, lora_id)
+            );
+            CREATE TABLE IF NOT EXISTS lora_preset_shares (
+                id TEXT PRIMARY KEY,
+                creator_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS lora_preset_share_items (
+                share_id TEXT NOT NULL REFERENCES lora_preset_shares(id) ON DELETE CASCADE,
+                position INTEGER NOT NULL,
+                lora_id INTEGER NOT NULL,
+                lora_name TEXT NOT NULL,
+                base_model TEXT,
+                nsfw INTEGER NOT NULL DEFAULT 0,
+                strength REAL NOT NULL DEFAULT 1,
+                PRIMARY KEY(share_id, position),
+                UNIQUE(share_id, lora_id)
             );
         `);
         this.db.pragma("foreign_keys = ON");
@@ -487,6 +559,30 @@ class SqliteAdapter implements DatabaseAdapter {
 
     async deleteLoraPreset(id: string, owner_id: string): Promise<boolean> {
         const result = this.db.prepare("DELETE FROM lora_presets WHERE id = ? AND owner_id = ?").run(id, owner_id);
+        return result.changes > 0;
+    }
+
+    async saveLoraPresetShare(input: SaveLoraPresetShareInput): Promise<LoraPresetShare | undefined> {
+        const save = this.db.transaction(() => {
+            this.db.prepare("INSERT INTO lora_preset_shares (id, creator_id, name) VALUES (?, ?, ?)").run(input.id, input.creator_id, input.name);
+            const insert = this.db.prepare("INSERT INTO lora_preset_share_items (share_id, position, lora_id, lora_name, base_model, nsfw, strength) VALUES (?, ?, ?, ?, ?, ?, ?)");
+            for(const [position, item] of input.items.entries()) {
+                insert.run(input.id, position, item.lora_id, item.lora_name, item.base_model ?? null, item.nsfw ? 1 : 0, item.strength);
+            }
+        });
+        save();
+        return this.getLoraPresetShare(input.id);
+    }
+
+    async getLoraPresetShare(id: string): Promise<LoraPresetShare | undefined> {
+        const share = this.db.prepare("SELECT * FROM lora_preset_shares WHERE id = ?").get(id) as RawLoraPresetShareRow | undefined;
+        if(!share) return undefined;
+        const items = this.db.prepare("SELECT * FROM lora_preset_share_items WHERE share_id = ? ORDER BY position").all(id) as RawLoraPresetShareItemRow[];
+        return normalizeLoraPresetShare(share, items);
+    }
+
+    async deleteLoraPresetShare(id: string, creator_id: string): Promise<boolean> {
+        const result = this.db.prepare("DELETE FROM lora_preset_shares WHERE id = ? AND creator_id = ?").run(id, creator_id);
         return result.changes > 0;
     }
 

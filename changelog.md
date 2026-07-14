@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- add durable, immutable `/lora_preset share` snapshots that other users can copy into their personal presets
 - allow `/advanced_generate` to temporarily override every LoRA strength in a selected personal preset without changing the saved preset
 - support Horde LoRA strengths from -5 to 5 and report configurations that exceed Discord's 25 slash-command option limit
 - monitor Discord gateway health and recover stalled connections through PM2 restarts with configurable grace and backoff timings

@@ -135,6 +135,21 @@ export interface SaveLoraPresetInput {
     items: Omit<LoraPresetItem, "position">[]
 }
 
+export interface LoraPresetShare {
+    id: string,
+    creator_id: string,
+    name: string,
+    created_at: Date,
+    items: LoraPresetItem[]
+}
+
+export interface SaveLoraPresetShareInput {
+    id: string,
+    creator_id: string,
+    name: string,
+    items: Omit<LoraPresetItem, "position">[]
+}
+
 export interface DatabaseCounts {
     user_tokens: number,
     parties: number,
@@ -184,6 +199,9 @@ export interface DatabaseAdapter {
     listLoraPresets(owner_id: string): Promise<LoraPreset[]>,
     saveLoraPreset(input: SaveLoraPresetInput): Promise<LoraPreset | undefined>,
     deleteLoraPreset(id: string, owner_id: string): Promise<boolean>,
+    saveLoraPresetShare(input: SaveLoraPresetShareInput): Promise<LoraPresetShare | undefined>,
+    getLoraPresetShare(id: string): Promise<LoraPresetShare | undefined>,
+    deleteLoraPresetShare(id: string, creator_id: string): Promise<boolean>,
     getCounts(): Promise<DatabaseCounts>
 }
 

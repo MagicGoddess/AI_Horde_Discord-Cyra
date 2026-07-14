@@ -33,6 +33,7 @@ A personal fork of ZeldaFan0225/AI_Horde_Discord, with added features.
 - Failed generation summaries: `/generate` and `/advanced_generate` now keep a final failure embed with request details such as prompt, style, kudos consumed, elapsed time, and generation ID instead of dropping the embed entirely when the request faults or times out.
 - Personal LoRA presets provide reusable multi-LoRA setups for `/advanced_generate`.
   - Use `/lora_preset create`, `edit`, `list`, and `delete` to manage private presets through an ephemeral editor.
+  - `/lora_preset share` posts an immutable preset snapshot with a button other users can use to copy it into their own presets. The sharer can delete the shared message.
   - Each LoRA has one strength from -5 to 5 applied to both model and CLIP, and Horde automatically injects an available trigger word.
   - In `/advanced_generate`, set `adjust_lora_strengths` when selecting a preset to temporarily change its strengths for that generation without creating or modifying a preset.
   - Presets with up to five LoRAs use one modal field per LoRA; larger configured presets use `CivitAI_ID=strength` lines in one field.

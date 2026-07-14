@@ -48,6 +48,6 @@ For SQLite, set `"database.type": "sqlite"` in `config.json`.
 - Optional: set `"database.sqlite.path"` if you do not want the default `./data/ai_horde.sqlite`
 - Leave the `DB_*` entries in `.env` empty
 - Start the bot normally; it will create the SQLite database file and schema automatically
-- Existing SQLite installs receive additive startup migrations automatically, including the tables used by personal LoRA presets
+- Existing SQLite installs receive additive startup migrations automatically, including the tables used by personal and shared LoRA presets
 
 SQLite support is intended for local, single-instance deployments.
