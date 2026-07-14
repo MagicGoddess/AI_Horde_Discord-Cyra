@@ -151,7 +151,9 @@ client.on("interactionCreate", async (interaction) => {
     }
 })
 
-process.on("unhandledRejection", error => requestRestart("Unhandled promise rejection.", error))
+process.on("unhandledRejection", error => {
+    console.error("[Process] Unhandled promise rejection:", error)
+})
 process.on("uncaughtException", error => requestRestart("Uncaught exception.", error))
 
 void bootstrap().catch(error => requestRestart("Bootstrap failed.", error))

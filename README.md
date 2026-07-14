@@ -39,7 +39,7 @@ A personal fork of ZeldaFan0225/AI_Horde_Discord, with added features.
   - Monitors gateway readiness and acknowledged heartbeats while allowing discord.js to perform its native reconnection first.
   - Exits with an error when the gateway remains unhealthy beyond `connection_health.grace_period_seconds`, allowing PM2 to restart the bot with exponential backoff.
   - Logs gateway disconnect, reconnect, resume, invalid-session, and shard error events.
-  - Handles failed startup logins and unexpected process-level errors without leaving a dead process running.
+  - Restarts after failed startup logins or uncaught exceptions, while logging unrelated unhandled promise rejections without treating transient API failures as gateway failures.
   - Keeps ready-time initialization idempotent so reconnects do not duplicate background maintenance intervals.
 
 ---
