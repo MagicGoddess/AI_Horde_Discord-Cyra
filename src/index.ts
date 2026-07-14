@@ -11,6 +11,7 @@ import {existsSync, mkdirSync} from "fs"
 import { handleMessageReact } from "./handlers/messageReact";
 import { createDatabaseAdapter } from "./database";
 import { DatabaseAdapter } from "./types";
+import { ConnectionHealthMonitor } from "./classes/connectionHealth";
 
 const RE_INI_KEY_VAL = /^\s*([\w.-]+)\s*=\s*(.*)?\s*$/
 for (const line of readFileSync(`${process.cwd()}/.env`, 'utf8').split(/[\r\n]/)) {
@@ -21,6 +22,8 @@ for (const line of readFileSync(`${process.cwd()}/.env`, 'utf8').split(/[\r\n]/)
 }
 
 let connection: DatabaseAdapter | undefined
+let connectionHealthMonitor: ConnectionHealthMonitor | undefined
+let restartRequested = false
 
 
 const client = new AIHordeClient({
@@ -36,13 +39,25 @@ async function bootstrap() {
         connection = createDatabaseAdapter(client.config)
         await connection.initialize()
 
-        setInterval(async () => {
+        setInterval(() => {
             const cutoff = new Date(Date.now() - (1000 * 60 * 60 * 24 * 7))
-            await connection?.deleteExpiredPendingKudos(cutoff).catch(console.error)
+            void connection?.deleteExpiredPendingKudos(cutoff).catch(console.error)
         }, 1000 * 60 * 60 * 24)
     }
 
-    client.login(process.env["DISCORD_TOKEN"])
+    connectionHealthMonitor = new ConnectionHealthMonitor(client, client.config.connection_health, requestRestart)
+    connectionHealthMonitor.start(client.config.connection_health?.enabled !== false)
+
+    await client.login(process.env["DISCORD_TOKEN"])
+}
+
+function requestRestart(reason: string, error?: unknown) {
+    if(restartRequested) return;
+    restartRequested = true
+    connectionHealthMonitor?.stop()
+    console.error(`[Process] ${reason}`, error ?? "")
+    process.exitCode = 1
+    setTimeout(() => process.exit(1), 250)
 }
 
 const ai_horde_manager = new AIHorde({
@@ -65,23 +80,27 @@ if(!existsSync(`${process.cwd()}/node_modules/webp-converter/temp`)) {
 }
 
 
-client.on("ready", async () => {
-    client.commands.loadClasses().catch(console.error)
-    client.components.loadClasses().catch(console.error)
-    client.contexts.loadClasses().catch(console.error)
-    client.modals.loadClasses().catch(console.error)
+let clientInitialized = false
+
+client.on("ready", () => {
     client.user?.setPresence({activities: [{type: ActivityType.Listening, name: "your generation requests | https://aihorde.net/"}], status: PresenceUpdateStatus.DoNotDisturb, })
+    console.log(clientInitialized ? "[Discord] Ready after reconnect." : "[Discord] Ready.")
+    if(clientInitialized) return;
+    clientInitialized = true
+    void initializeClient().catch(error => requestRestart("Discord client initialization failed.", error))
+})
+
+async function initializeClient() {
+    await Promise.all([
+        client.commands.loadClasses(),
+        client.components.loadClasses(),
+        client.contexts.loadClasses(),
+        client.modals.loadClasses()
+    ])
     if(client.config.generate?.enabled) {
-        await client.loadHordeStyles()
-        await client.loadHordeStyleCategories()
-        await client.loadHordeCuratedLORAs()
-        setInterval(async () => {
-            await client.loadHordeStyles()
-            await client.loadHordeStyleCategories()
-            await client.loadHordeCuratedLORAs()
-        }, 1000 * 60 * 60 * 24)
+        await refreshHordeData()
+        setInterval(() => void refreshHordeData().catch(console.error), 1000 * 60 * 60 * 24)
     }
-    console.log(`Ready`)
     await client.application?.commands.set([...client.commands.createPostBody(), ...client.contexts.createPostBody()]).catch(console.error)
     if((client.config.advanced_generate?.user_restrictions?.amount?.max ?? 4) > 10) throw new Error("More than 10 images are not supported in the bot")
     if(client.config.filter_actions?.guilds?.length && (client.config.filter_actions?.mode !== "whitelist" && client.config.filter_actions?.mode !== "blacklist")) throw new Error("The actions filter mode must be set to either whitelist, blacklist.")
@@ -89,9 +108,17 @@ client.on("ready", async () => {
 
     if(client.config.party?.enabled && connection) {
         await client.cleanUpParties(ai_horde_manager, connection)
-        setInterval(async () => await client.cleanUpParties(ai_horde_manager, connection), 1000 * 60 * 5)
+        setInterval(() => void client.cleanUpParties(ai_horde_manager, connection).catch(console.error), 1000 * 60 * 5)
     }
-})
+}
+
+async function refreshHordeData() {
+    await Promise.all([
+        client.loadHordeStyles(),
+        client.loadHordeStyleCategories(),
+        client.loadHordeCuratedLORAs()
+    ])
+}
 
 if(client.config.react_to_transfer?.enabled) client.on("messageReactionAdd", async (r, u) => await handleMessageReact(r as PartialMessageReaction, u as PartialUser, client, connection, ai_horde_manager).catch(console.error))
 
@@ -120,4 +147,7 @@ client.on("interactionCreate", async (interaction) => {
     }
 })
 
-bootstrap().catch(console.error)
+process.on("unhandledRejection", error => requestRestart("Unhandled promise rejection.", error))
+process.on("uncaughtException", error => requestRestart("Uncaught exception.", error))
+
+void bootstrap().catch(error => requestRestart("Bootstrap failed.", error))

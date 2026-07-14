@@ -7,6 +7,12 @@
         }
     },
     "default_token": "0000000000",
+    "connection_health": {
+        "enabled": true,
+        "check_interval_seconds": 30,
+        "grace_period_seconds": 120,
+        "restart_backoff_milliseconds": 1000
+    },
     "apply_roles_to_worker_owners": [
 
     ],

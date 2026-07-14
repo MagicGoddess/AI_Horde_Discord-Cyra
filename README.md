@@ -29,6 +29,12 @@ A personal fork of ZeldaFan0225/AI_Horde_Discord, with added features.
 - Progressive generation previews: `/generate` and `/advanced_generate` now attach completed images to the same generation message as soon as each image is finished, instead of waiting for the full batch.
 - Generation timing: `/generate`, `/advanced_generate`, and remix now show how long a generation took when it completes successfully, and include elapsed time in system/API failure messages.
 - Failed generation summaries: `/generate` and `/advanced_generate` now keep a final failure embed with request details such as prompt, style, kudos consumed, elapsed time, and generation ID instead of dropping the embed entirely when the request faults or times out.
+- Graceful Discord gateway recovery prevents temporary DNS or network failures from leaving the bot online but unresponsive.
+  - Monitors gateway readiness and acknowledged heartbeats while allowing discord.js to perform its native reconnection first.
+  - Exits with an error when the gateway remains unhealthy beyond `connection_health.grace_period_seconds`, allowing PM2 to restart the bot with exponential backoff.
+  - Logs gateway disconnect, reconnect, resume, invalid-session, and shard error events.
+  - Handles failed startup logins and unexpected process-level errors without leaving a dead process running.
+  - Keeps ready-time initialization idempotent so reconnects do not duplicate background maintenance intervals.
 
 ---
 Original desc:
@@ -65,6 +71,7 @@ The bot has the following features:
 - "Remix" to edit another discord users avatar 
 - "Caption" to caption anozher discord users avatar
 - advanced configuration file which lets you change how the bot behaves and what actions the user can use (for limits refer to https://aihorde.net/api)
+- Discord gateway health monitoring with automatic recovery from stalled connections and temporary DNS/network failures when run under PM2
 - logging prompts, user id and generation id to track generation of malicious, nsfw or illegal content
 - and even more...
 
@@ -103,6 +110,8 @@ If you just want to generate images with no token or the default token in the co
 9) compile the code and start the process (this can be done by using `npm run deploy`)  
   
 Now if everything is set up it should start and give an output in the console.  
+
+For automatic recovery from an unrecoverable Discord gateway connection, run the compiled bot with the supplied `ecosystem.config.js` under PM2. Cyra first allows discord.js to reconnect for `connection_health.grace_period_seconds`; if the connection remains unhealthy, it exits with an error and PM2 restarts it with exponential backoff. Running `node .` directly still detects and exits on an unhealthy connection, but it cannot restart itself.
 
 
 ## Encryption Key

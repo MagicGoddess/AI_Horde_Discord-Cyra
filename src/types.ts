@@ -273,6 +273,7 @@ export interface Config {
         }
     },
     default_token?: string,
+    connection_health?: ConnectionHealthConfig,
     apply_roles_to_worker_owners?: string[],
     apply_roles_to_trusted_users?: string[],
     apply_roles_to_logged_in_users?: string[],
@@ -539,4 +540,11 @@ export interface Config {
         styles_source?: string
         style_categories_source?: string,
     }
+}
+
+export interface ConnectionHealthConfig {
+    enabled?: boolean,
+    check_interval_seconds?: number,
+    grace_period_seconds?: number,
+    restart_backoff_milliseconds?: number
 }

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- monitor Discord gateway health and recover stalled connections through PM2 restarts with configurable grace and backoff timings
+- handle startup DNS/network failures without leaving a dead bot process marked online
+
 ## V3.3.0
 - add support for upscaling and similar interrogation forms
 - add support for adding roles when somebody logs in via the bot

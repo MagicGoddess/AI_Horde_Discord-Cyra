@@ -12,6 +12,12 @@ Here you can see an explanation of what which option does
         }
     },
     "default_token": The default token to use for requests if user is not logged in (STRING; recommended default: "0000000000"),
+    "connection_health": {
+        "enabled": Monitor Discord gateway readiness and heartbeat acknowledgements, restarting an unhealthy process when enabled (BOOLEAN; default: true),
+        "check_interval_seconds": How often to check gateway health (POSITIVE NUMBER; default: 30),
+        "grace_period_seconds": How long the gateway may remain unhealthy while discord.js reconnects before the process exits (POSITIVE NUMBER; default: 120),
+        "restart_backoff_milliseconds": Initial PM2 exponential restart delay after the process exits (POSITIVE NUMBER; default: 1000)
+    },
     "apply_roles_to_worker_owners": Roles to apply if the user has a worker running (ARRAY OF ROLE IDS),
     "apply_roles_to_trusted_users": Roles to apply if the useris trusted (ARRAY OF ROLE IDS),
     "advanced": {
