@@ -80,6 +80,11 @@ export function validatePresetName(name: string): string | undefined {
     return undefined;
 }
 
+export function getLoraStrengthValidationError(strength: number): string | undefined {
+    if(!Number.isFinite(strength) || strength < 0 || strength > 5) return "Strength must be a number from 0 to 5.";
+    return undefined;
+}
+
 export function getLoraValidationError(client: AIHordeClient, lora: LORAData): string | undefined {
     if(lora.type !== "LORA" && lora.type !== "LoCon") return "The selected model is not a LoRA, LoCon, or LyCORIS";
     const files = lora.modelVersions.flatMap(version => version.files ?? []);

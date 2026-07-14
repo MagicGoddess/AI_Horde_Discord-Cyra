@@ -9,9 +9,29 @@ import { formatDuration } from "../formatDuration";
 const {buffer2webpbuffer} = require("webp-converter")
 import { appendFileSync } from "fs"
 import { ImageGenerationInput, ModelGenerationInputStableSamplers, ModelGenerationInputPostProcessingTypes } from "@zeldafan0225/ai_horde";
-import { getLoraValidationError } from "../loraPresets";
+import { getLoraStrengthValidationError, getLoraValidationError } from "../loraPresets";
 
 const config = JSON.parse(readFileSync("./config.json").toString()) as Config
+const MAX_EMBED_DESCRIPTION_LENGTH = 4096
+
+function truncateWithEllipsis(value: string, maxLength: number) {
+    if(value.length <= maxLength) return value
+    if(maxLength <= 0) return ""
+    if(maxLength <= 3) return value.slice(0, maxLength)
+    return `${value.slice(0, maxLength - 3)}...`
+}
+
+function buildLimitedDescription(fixedParts: string[], variableParts: string[]) {
+    if(fixedParts.length !== variableParts.length + 1) throw new Error("Description parts must alternate between fixed and variable content")
+    let remaining = Math.max(0, MAX_EMBED_DESCRIPTION_LENGTH - fixedParts.reduce((length, part) => length + part.length, 0))
+    const fittedVariables = variableParts.map(part => {
+        const fitted = truncateWithEllipsis(part, remaining)
+        remaining -= fitted.length
+        return fitted
+    })
+    const description = fixedParts.map((part, index) => `${part}${fittedVariables[index] ?? ""}`).join("")
+    return truncateWithEllipsis(description, MAX_EMBED_DESCRIPTION_LENGTH)
+}
 
 const command_data = new SlashCommandBuilder()
     .setName("advanced_generate")
@@ -321,6 +341,7 @@ export default class extends Command {
             if(!preset.items.length) return ctx.error({error: "That LoRA preset is empty. Edit it before generating.", codeblock: false})
             const maxPresetLoras = ctx.client.config.advanced_generate?.lora_presets?.max_loras_per_preset ?? 5
             if(preset.items.length > maxPresetLoras) return ctx.error({error: `That preset exceeds the current limit of ${maxPresetLoras} LoRAs. Edit it before generating.`, codeblock: false})
+            if(preset.items.some(item => getLoraStrengthValidationError(item.strength))) return ctx.error({error: "That preset contains a LoRA strength outside the supported 0 to 5 range. Edit it before generating.", codeblock: false})
             if(!ctx.client.config.advanced_generate?.user_restrictions?.allow_nsfw && preset.items.some(item => item.nsfw)) return ctx.error({error: "That preset contains an NSFW LoRA, which is not allowed by this bot.", codeblock: false})
             selected_preset_name = preset.name
             requested_loras.push(...preset.items.map(item => ({name: item.lora_id.toString(), model: item.strength, clip: item.strength, inject_trigger: "any"})))
@@ -346,7 +367,7 @@ export default class extends Command {
             ...requested_lora_labels
         ]
         const lora_label_text = lora_labels.join(", ")
-        const lora_summary = lora_labels.length ? `\n**LoRAs** ${lora_label_text.length > 1500 ? `${lora_label_text.slice(0, 1497)}...` : lora_label_text}${selected_preset_name ? `\n**LoRA Preset** ${selected_preset_name}` : ""}` : ""
+        const lora_summary = lora_labels.length ? `\n**LoRAs** ${lora_label_text}${selected_preset_name ? `\n**LoRA Preset** ${selected_preset_name}` : ""}` : ""
 
         if(party?.channel_id && !party.advanced_generate_allowed) return ctx.error({error: `You can only use ${await ctx.client.getSlashCommandTag("generate")} in parties unless advanced generation is enabled for that party`, codeblock: false})
         if(party?.style && requestedStyleRaw && party.style !== requestedStyleRaw.toLowerCase()) return ctx.error({error: `Please use the style '${party.style}' for this party`})
@@ -507,17 +528,17 @@ export default class extends Command {
         const embed = new EmbedBuilder({
             color: Colors.Blue,
             title: "Generation started",
-            description: `Position: \`${start_status?.queue_position}\`/\`${start_horde_data.queued_requests}\`
+            description: buildLimitedDescription([`Position: \`${start_status?.queue_position}\`/\`${start_horde_data.queued_requests}\`
 Kudos consumed: \`${start_status?.kudos}\`
 Workers: \`${start_horde_data.worker_count}\`
-${lora_summary}
+`, `
 
 \`${start_status?.waiting}\`/\`${amount}\` Images waiting
 \`${start_status?.processing}\`/\`${amount}\` Images processing
 \`${start_status?.finished}\`/\`${amount}\` Images finished
 ${"🟥".repeat(start_status?.waiting ?? 0)}${"🟨".repeat(start_status?.processing ?? 0)}${"🟩".repeat(start_status?.finished ?? 0)}
 ${!start_status?.is_possible ? "\nRequest can not be fulfulled with current amount of workers...\n" : ""}
-ETA: <t:${Math.floor(Date.now()/1000)+(start_status?.wait_time ?? 0)}:R>`
+ETA: <t:${Math.floor(Date.now()/1000)+(start_status?.wait_time ?? 0)}:R>`], [lora_summary])
         })
 
         const login_embed = new EmbedBuilder({
@@ -587,7 +608,10 @@ ETA: <t:${Math.floor(Date.now()/1000)+(start_status?.wait_time ?? 0)}:R>`
             const failure_embed = new EmbedBuilder({
                 color: Colors.Red,
                 title: "Generation Failed",
-                description: `**Prompt** ${prompt}\n**Style** ${style_raw}${lora_summary}\n**Kudos Consumed** \`${status?.kudos ?? start_status?.kudos ?? "Unknown"}\`\n**Time Taken** \`${getElapsedGenerationTime()}\`\n**Failure Reason** \`${reason}\``,
+                description: buildLimitedDescription(
+                    ["**Prompt** ", `\n**Style** ${style_raw}`, `\n**Kudos Consumed** \`${status?.kudos ?? start_status?.kudos ?? "Unknown"}\`\n**Time Taken** \`${getElapsedGenerationTime()}\`\n**Failure Reason** \`${reason}\``],
+                    [prompt, lora_summary]
+                ),
                 footer: generation_start?.id ? {text: `Generation ID ${generation_start.id}`} : undefined,
                 thumbnail: img_data ? {url: img!.url} : undefined
             })
@@ -704,7 +728,10 @@ ETA: <t:${Math.floor(Date.now()/1000)+(status?.wait_time ?? 0)}:R>`
                     const embeds = [
                         new EmbedBuilder({
                             title: "Generation Finished",
-                            description: `**Prompt** ${prompt}\n**Style** ${style_raw}${lora_summary}\n**Kudos Consumed** \`${images.kudos}\`\n**Time Taken** \`${getElapsedGenerationTime()}\`${image_map.length !== amount ? "\nCensored Images are not displayed" : ""}`,
+                            description: buildLimitedDescription(
+                                ["**Prompt** ", `\n**Style** ${style_raw}`, `\n**Kudos Consumed** \`${images.kudos}\`\n**Time Taken** \`${getElapsedGenerationTime()}\`${image_map.length !== amount ? "\nCensored Images are not displayed" : ""}`],
+                                [prompt, lora_summary]
+                            ),
                             color: Colors.Blue,
                             footer: {text: `Generation ID ${generation_start!.id}`},
                             thumbnail: img_data && image_map.length < 10 ? {url: "attachment://original.webp"} : img_data ? {url: img!.url} : undefined
@@ -722,11 +749,17 @@ ETA: <t:${Math.floor(Date.now()/1000)+(status?.wait_time ?? 0)}:R>`
                     const req = await Centra(g.img!, "get").send();
                     if(ctx.client.config.advanced?.dev) console.log(req)
                     const attachment = new AttachmentBuilder(req.body, {name: `${g.seed ?? `image${i}`}.webp`})
+                    const description = !i
+                        ? buildLimitedDescription(
+                            [`**Seed:** ${g.seed}\n**Model:** ${g.model}\n**Generated by** ${g.worker_name}\n(\`${g.worker_id}\`)\n**Prompt:** `, "", `\n**Total Kudos Cost:** \`${images.kudos}\`\n**Time Taken:** \`${getElapsedGenerationTime()}\`${ctx.client.config.advanced?.dev ? `\n\n**Image ID** ${g.id}` : ""}`],
+                            [prompt, lora_summary]
+                        )
+                        : `**Seed:** ${g.seed}\n**Model:** ${g.model}\n**Generated by** ${g.worker_name}\n(\`${g.worker_id}\`)${ctx.client.config.advanced?.dev ? `\n\n**Image ID** ${g.id}` : ""}`
                     const embed = new EmbedBuilder({
                         title: `Image ${i+1}`,
                         image: {url: `attachment://${g.seed ?? `image${i}`}.webp`},
                         color: Colors.Blue,
-                        description: `**Seed:** ${g.seed}\n**Model:** ${g.model}\n**Generated by** ${g.worker_name}\n(\`${g.worker_id}\`)${!i ? `\n**Prompt:** ${prompt}${lora_summary}\n**Total Kudos Cost:** \`${images.kudos}\`\n**Time Taken:** \`${getElapsedGenerationTime()}\`` : ""}${ctx.client.config.advanced?.dev ? `\n\n**Image ID** ${g.id}` : ""}`,
+                        description,
                     })
                     if(img_data) embed.setThumbnail(`attachment://original.webp`)
                     return {attachment, embed}

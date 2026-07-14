@@ -2,6 +2,7 @@ import { Modal } from "../classes/modal";
 import { ModalContext } from "../classes/modalContext";
 import {
     getLoraPresetSession,
+    getLoraStrengthValidationError,
     getLoraValidationError,
     normalizePresetName,
     renderLoraPresetEditor,
@@ -36,7 +37,8 @@ export default class extends Modal {
             const selected = session.items.find(item => item.lora_id === session.selectedLoraId);
             if(!selected) return ctx.error({error: "The selected LoRA is no longer in this preset.", codeblock: false});
             const strength = Number(ctx.interaction.fields.getTextInputValue("strength"));
-            if(!Number.isFinite(strength) || strength < -5 || strength > 5) return ctx.error({error: "Strength must be a number from -5 to 5.", codeblock: false});
+            const error = getLoraStrengthValidationError(strength);
+            if(error) return ctx.error({error, codeblock: false});
             selected.strength = strength;
             return ctx.interaction.update(renderLoraPresetEditor(session, maxLoras));
         }
