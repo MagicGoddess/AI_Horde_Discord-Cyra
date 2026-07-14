@@ -18,9 +18,9 @@ export async function handleMessageReact(reaction: PartialMessageReaction | Mess
     } else if(target_user.bot) {
         const deleteButton = r.message.components
             .flatMap(row => row.components)
-            .find(component => component.customId?.startsWith("delete_"))
-        const ownerId = deleteButton?.customId?.slice("delete_".length)
-        if(!ownerId || !/^\d{17,20}$/.test(ownerId)) return await r.users.remove(u)
+            .find(component => /^delete_\d{17,20}_generation$/.test(component.customId ?? ""))
+        const ownerId = deleteButton?.customId?.match(/^delete_(\d{17,20})_generation$/)?.[1]
+        if(!ownerId) return await r.users.remove(u)
         const fetchedOwner = await client.users.fetch(ownerId).catch(() => null)
         if(!fetchedOwner) return await r.users.remove(u)
         target_user = fetchedOwner

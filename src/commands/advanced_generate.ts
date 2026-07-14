@@ -612,7 +612,7 @@ ETA: <t:${Math.floor(Date.now()/1000)+(start_status?.wait_time ?? 0)}:R>`], [lor
         })
         const delete_btn: InteractionButtonComponentData = {
             label: "Delete this message",
-            customId: `delete_${ctx.interaction.user.id}`,
+            customId: `delete_${ctx.interaction.user.id}_generation`,
             style: 4,
             type: 2
         }
