@@ -339,6 +339,7 @@ ETA: <t:${Math.floor(Date.now()/1000)+(start_status?.wait_time ?? 0)}:R>`
 
         let error_timeout = Date.now()*2
         let prev_left = 1
+        let latest_status = start_status
 
         let done = false
         const preview_images = new Map<string, Buffer>()
@@ -370,6 +371,22 @@ ETA: <t:${Math.floor(Date.now()/1000)+(start_status?.wait_time ?? 0)}:R>`
             return Array.from(preview_images.entries()).map(([id, data]) => new AttachmentBuilder(data, {name: `${id}.webp`}))
         }
 
+        async function renderFailure(reason: string, status = latest_status) {
+            const failure_embed = new EmbedBuilder({
+                color: Colors.Red,
+                title: "Generation Failed",
+                description: `**Prompt** ${ctx.interaction.options.getString("prompt", true)}\n**Style** \`${style?.name ?? style_raw}\`${style?.type === "category-style" ? ` from category \`${style_raw}\`` : ""}\n**Kudos Consumed** \`${status?.kudos ?? start_status?.kudos ?? "Unknown"}\`\n**Time Taken** \`${getElapsedGenerationTime()}\`\n**Failure Reason** \`${reason}\``,
+                footer: generation_start?.id ? {text: `Generation ID ${generation_start.id}`} : undefined,
+                thumbnail: img_data ? {url: img!.url} : undefined
+            })
+            const embeds = token === (ctx.client.config.default_token ?? "0000000000") ? [failure_embed.toJSON(), login_embed.toJSON()] : [failure_embed.toJSON()]
+            await message.edit({
+                content: `Image generation failed after ${getElapsedGenerationTime()}`,
+                components: [{type: 1, components: [delete_btn]}],
+                embeds
+            })
+        }
+
         if(ctx.client.config.generate?.improve_loading_time && (start_status?.wait_time ?? 0) <= 3) {
             // wait before starting the loop so that the first iteration can already pick up the result
             const pre_test = await new Promise((resolve) => setTimeout(async () => {resolve(await getCheckAndDisplayResult())},((start_status?.wait_time ?? 0) + 0.1) * 1000))
@@ -380,6 +397,7 @@ ETA: <t:${Math.floor(Date.now()/1000)+(start_status?.wait_time ?? 0)}:R>`
             const d = await getCheckAndDisplayResult()
             if(!d) return;
             const {status, horde_data} = d
+            latest_status = status
             if(ctx.client.config.generate?.improve_loading_time && (status.wait_time ?? 0) <= 3) {
                 // try to display result faster
                 setTimeout(async () => {await getCheckAndDisplayResult()},((start_status?.wait_time ?? 0) + 0.1) * 1000)
@@ -388,14 +406,10 @@ ETA: <t:${Math.floor(Date.now()/1000)+(start_status?.wait_time ?? 0)}:R>`
             if(status?.wait_time === 0 && prev_left !== 0) error_timeout = Date.now()
             prev_left = status?.wait_time ?? 1
 
-            if(error_timeout < (Date.now()-1000*60*2) || start_status?.faulted) {
+            if(error_timeout < (Date.now()-1000*60*2) || latest_status?.faulted) {
                 if(!done) {
                     await ctx.ai_horde_manager.deleteImageGenerationRequest(generation_start.id!)
-                    message.edit({
-                        components: [],
-                        content: `Generation cancelled due to errors after ${getElapsedGenerationTime()}`,
-                        embeds: []
-                    })
+                    await renderFailure("Cancelled due to errors or timeout")
                 }
                 clearInterval(inter)
                 return;
@@ -444,10 +458,11 @@ ETA: <t:${Math.floor(Date.now()/1000)+(status?.wait_time ?? 0)}:R>`
         async function getCheckAndDisplayResult(precheck?: boolean) {
             if(done) return;
             const status = await ctx.ai_horde_manager.getImageGenerationCheck(generation_start!.id!).catch((e) => ctx.client.config.advanced?.dev ? console.error(e) : null);
+            if(status) latest_status = status
             done = !!status?.done
             const horde_data = await ctx.ai_horde_manager.getPerformance()
             if(!status || status.faulted) {
-                if(!done) await message.edit({content: `Image generation has been cancelled after ${getElapsedGenerationTime()}`, embeds: []});
+                if(!done) await renderFailure(status?.faulted ? "Faulted" : "Status unavailable", status ?? latest_status);
                 if(!precheck) clearInterval(inter)
                 return null;
             }
