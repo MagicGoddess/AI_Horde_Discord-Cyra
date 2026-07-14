@@ -80,7 +80,7 @@ export default class extends Component {
             if(!selected) return ctx.error({error: "Select a LoRA first.", codeblock: false});
             const strength = new TextInputBuilder()
                 .setCustomId("strength")
-                .setLabel("Strength (0 to 5)")
+                .setLabel("Strength (-5 to 5)")
                 .setStyle(TextInputStyle.Short)
                 .setValue(selected.strength.toString())
                 .setMaxLength(8)
@@ -133,7 +133,7 @@ export default class extends Component {
             if(!session.items.length) return ctx.error({error: "Add at least one LoRA before saving.", codeblock: false});
             if(session.items.length > maxLoras) return ctx.error({error: `A preset can contain at most ${maxLoras} LoRAs.`, codeblock: false});
             if(session.items.some(item => getLoraStrengthValidationError(item.strength))) {
-                return ctx.error({error: "Every LoRA strength must be a number from 0 to 5. Update invalid strengths before saving.", codeblock: false});
+                return ctx.error({error: "Every LoRA strength must be a number from -5 to 5. Update invalid strengths before saving.", codeblock: false});
             }
             if(!ctx.client.config.advanced_generate?.user_restrictions?.allow_nsfw && session.items.some(item => item.nsfw)) {
                 return ctx.error({error: "This preset contains an NSFW LoRA, which is no longer allowed by this bot.", codeblock: false});

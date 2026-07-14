@@ -1,7 +1,8 @@
 import { ActionRowData, AttachmentBuilder, ButtonBuilder, ChannelType, Colors, EmbedBuilder, InteractionButtonComponentData, SlashCommandAttachmentOption, SlashCommandBooleanOption, SlashCommandBuilder, SlashCommandIntegerOption, SlashCommandStringOption } from "discord.js";
 import { Command } from "../classes/command";
 import { CommandContext } from "../classes/commandContext";
-import { Config, HordeStyleData } from "../types";
+import { ModalContext } from "../classes/modalContext";
+import { Config, HordeStyleData, LoraPreset } from "../types";
 import {readFileSync} from "fs"
 import { AutocompleteContext } from "../classes/autocompleteContext";
 import Centra from "centra";
@@ -10,6 +11,7 @@ const {buffer2webpbuffer} = require("webp-converter")
 import { appendFileSync } from "fs"
 import { ImageGenerationInput, ModelGenerationInputStableSamplers, ModelGenerationInputPostProcessingTypes } from "@zeldafan0225/ai_horde";
 import { getLoraStrengthValidationError, getLoraValidationError } from "../loraPresets";
+import { AdvancedGenerateOptionsSnapshot, buildAdvancedGenerationStrengthModal, createAdvancedGenerationAdjustmentSession, snapshotAdvancedGenerateOptions } from "../advancedGenerationAdjustments";
 
 const config = JSON.parse(readFileSync("./config.json").toString()) as Config
 const MAX_EMBED_DESCRIPTION_LENGTH = 4096
@@ -222,6 +224,11 @@ const command_data = new SlashCommandBuilder()
                 .setDescription("A personal LoRA preset or one CivitAI LoRA to use")
                 .setAutocomplete(true)
             )
+            if(config.advanced_generate?.lora_presets?.enabled !== false) command_data.addBooleanOption(
+                new SlashCommandBooleanOption()
+                .setName("adjust_lora_strengths")
+                .setDescription("Temporarily adjust the selected preset's LoRA strengths")
+            )
         }
         if(config.advanced_generate?.user_restrictions?.allow_tis) {
             command_data
@@ -259,8 +266,9 @@ const command_data = new SlashCommandBuilder()
         }
     }
 
-
-    // 25 out of 25 options used(!)
+if((command_data.options?.length ?? 0) > 25) {
+    throw new Error(`The enabled advanced_generate options exceed Discord's limit of 25 (currently ${command_data.options.length}). Disable at least ${command_data.options.length - 25} optional advanced_generate option(s) in config.json.`)
+}
 
 function generateButtons(id: string) {
     let i = 0
@@ -291,40 +299,88 @@ export default class extends Command {
 
     override async run(ctx: CommandContext): Promise<any> {
         if(!ctx.client.config.advanced_generate?.enabled) return ctx.error({error: "Generation is disabled."})
+        const options = snapshotAdvancedGenerateOptions(ctx.interaction)
+        if(!options.adjustLoraStrengths) {
+            await ctx.interaction.deferReply({})
+            return executeAdvancedGeneration(ctx, options)
+        }
 
-        await ctx.interaction.deferReply({})
-        let prompt = ctx.interaction.options.getString("prompt", true)
-        const party = await ctx.client.getParty(ctx.interaction.channelId, ctx.database)
+        if(!options.lora?.startsWith("preset:")) return ctx.error({error: "Choose a personal LoRA preset before enabling strength adjustments.", codeblock: false})
+        if(ctx.client.config.advanced_generate?.lora_presets?.enabled === false) return ctx.error({error: "LoRA presets are disabled.", codeblock: false})
+        if(!ctx.database) return ctx.error({error: "The database is disabled. Persistent LoRA presets require a database.", codeblock: false})
+        const timeoutMarker = Symbol("preset lookup timeout")
+        const failureMarker = Symbol("preset lookup failure")
+        let timeout: NodeJS.Timeout | undefined
+        const preset = await Promise.race([
+            ctx.database.getLoraPreset(options.lora.slice("preset:".length), ctx.interaction.user.id).catch(error => {
+                if(ctx.client.config.advanced?.dev) console.error(error)
+                return failureMarker
+            }),
+            new Promise<typeof timeoutMarker>(resolve => {
+                timeout = setTimeout(() => resolve(timeoutMarker), 2000)
+            })
+        ])
+        if(timeout) clearTimeout(timeout)
+        if(preset === timeoutMarker) return ctx.error({error: "The preset database lookup took too long. Please try again.", codeblock: false})
+        if(preset === failureMarker) return ctx.error({error: "The preset database could not be reached. Please try again.", codeblock: false})
+        if(typeof preset === "symbol") return ctx.error({error: "The preset could not be loaded. Please try again.", codeblock: false})
+        const validationError = validatePresetForGeneration(ctx, preset)
+        if(validationError) return ctx.error({error: validationError, codeblock: false})
+        const session = createAdvancedGenerationAdjustmentSession(ctx.interaction.user.id, options, preset!)
+        return ctx.interaction.showModal(buildAdvancedGenerationStrengthModal(session))
+    }
+
+    override async autocomplete(context: AutocompleteContext): Promise<any> {
+        return autocompleteAdvancedGeneration(context)
+    }
+}
+
+type AdvancedGenerationContext = CommandContext | ModalContext
+
+function validatePresetForGeneration(ctx: AdvancedGenerationContext, preset: LoraPreset | undefined) {
+    if(!preset) return "That LoRA preset was not found or does not belong to you."
+    if(!preset.items.length) return "That LoRA preset is empty. Edit it before generating."
+    const maxPresetLoras = ctx.client.config.advanced_generate?.lora_presets?.max_loras_per_preset ?? 5
+    if(preset.items.length > maxPresetLoras) return `That preset exceeds the current limit of ${maxPresetLoras} LoRAs. Edit it before generating.`
+    if(preset.items.some(item => getLoraStrengthValidationError(item.strength))) return "That preset contains a LoRA strength outside the supported -5 to 5 range. Edit it before generating."
+    if(!ctx.client.config.advanced_generate?.user_restrictions?.allow_nsfw && preset.items.some(item => item.nsfw)) return "That preset contains an NSFW LoRA, which is not allowed by this bot."
+    return undefined
+}
+
+export async function executeAdvancedGeneration(ctx: AdvancedGenerationContext, options: AdvancedGenerateOptionsSnapshot, presetOverride?: LoraPreset): Promise<any> {
+        const advancedGenerateConfig = ctx.client.config.advanced_generate!
+        let prompt = options.prompt
+        const party = await ctx.client.getParty(ctx.interaction.channelId!, ctx.database)
         
-        const requestedStyleRaw = ctx.interaction.options.getString("style")
+        const requestedStyleRaw = options.style
         const style_raw = party?.style ?? requestedStyleRaw ?? ctx.client.config.advanced_generate?.default?.style
         const style: Partial<HordeStyleData> & {prompt: string} = ctx.client.getHordeStyle(style_raw ?? "") || {prompt: "{p}{np}"}
 
-        const negative_prompt = ctx.interaction.options.getString("negative_prompt") ?? ""
-        const sampler = (ctx.interaction.options.getString("sampler") ?? style.sampler_name ?? ctx.client.config.advanced_generate?.default?.sampler ?? ModelGenerationInputStableSamplers.k_euler) as any
-        const cfg = ctx.interaction.options.getInteger("cfg") ?? style.cfg_scale ?? ctx.client.config.advanced_generate?.default?.cfg ?? 7.5
-        const denoise = (ctx.interaction.options.getInteger("denoise") ?? ctx.client.config.advanced_generate?.default?.denoise ?? 50)/100
-        const seed = ctx.interaction.options.getString("seed")
-        const gfpgan = !!(ctx.interaction.options.getBoolean("use_gfpgan") ?? ctx.client.config.advanced_generate?.default?.gfpgan)
-        const real_esrgan = !!(ctx.interaction.options.getBoolean("use_real_esrgan") ?? ctx.client.config.advanced_generate?.default?.real_esrgan)
-        const seed_variation = ctx.interaction.options.getInteger("seed_variation")
-        const tiling = !!(ctx.interaction.options.getBoolean("tiling") ?? ctx.client.config.advanced_generate?.default?.tiling)
-        const steps = ctx.interaction.options.getInteger("steps") ?? style.steps ?? ctx.client.config.advanced_generate?.default?.steps ?? 30
-        const amount = ctx.interaction.options.getInteger("amount") ?? ctx.client.config.advanced_generate?.default?.amount ?? 1
-        const requestedHeight = ctx.interaction.options.getInteger("height")
-        const requestedWidth = ctx.interaction.options.getInteger("width")
+        const negative_prompt = options.negativePrompt ?? ""
+        const sampler = (options.sampler ?? style.sampler_name ?? ctx.client.config.advanced_generate?.default?.sampler ?? ModelGenerationInputStableSamplers.k_euler) as any
+        const cfg = options.cfg ?? style.cfg_scale ?? ctx.client.config.advanced_generate?.default?.cfg ?? 7.5
+        const denoise = (options.denoise ?? ctx.client.config.advanced_generate?.default?.denoise ?? 50)/100
+        const seed = options.seed
+        const gfpgan = !!(options.useGfpgan ?? ctx.client.config.advanced_generate?.default?.gfpgan)
+        const real_esrgan = !!(options.useRealEsrgan ?? ctx.client.config.advanced_generate?.default?.real_esrgan)
+        const seed_variation = options.seedVariation
+        const tiling = !!(options.tiling ?? ctx.client.config.advanced_generate?.default?.tiling)
+        const steps = options.steps ?? style.steps ?? ctx.client.config.advanced_generate?.default?.steps ?? 30
+        const amount = options.amount ?? ctx.client.config.advanced_generate?.default?.amount ?? 1
+        const requestedHeight = options.height
+        const requestedWidth = options.width
         let height = requestedHeight ?? party?.height ?? style?.height ?? ctx.client.config.advanced_generate?.default?.resolution?.height ?? 512
         let width = requestedWidth ?? party?.width ?? style?.width ?? ctx.client.config.advanced_generate?.default?.resolution?.width ?? 512
-        const model = ctx.interaction.options.getString("model") ?? style?.model ?? ctx.client.config.advanced_generate?.default?.model
-        const keep_ratio = ctx.interaction.options.getBoolean("keep_original_ratio") ?? ctx.client.config.advanced_generate?.default?.keep_original_ratio ?? true
-        const karras = ctx.interaction.options.getBoolean("karras") ?? ctx.client.config.advanced_generate?.default?.karras ?? false
-        const share_result = ctx.interaction.options.getBoolean("share_result") ?? ctx.client.config.advanced_generate?.default?.share
-        const lora_raw = ctx.interaction.options.getString("lora")
-        const ti_raw = ctx.interaction.options.getString("textual_inversion") ?? ctx.client.config.advanced_generate.default?.tis
-        const hires_fix = ctx.interaction.options.getBoolean("hires_fix") ?? style.hires_fix ?? ctx.client.config.advanced_generate.default?.hires_fix
-        const qr_code_url = ctx.interaction.options.getString("qr_code_url")
-        const clipskip = ctx.interaction.options.getInteger("clip_skip") ?? style?.clip_skip ?? ctx.client.config.advanced_generate?.default?.clip_skip
-        let img = ctx.interaction.options.getAttachment("source_image")
+        const model = options.model ?? style?.model ?? ctx.client.config.advanced_generate?.default?.model
+        const keep_ratio = options.keepOriginalRatio ?? ctx.client.config.advanced_generate?.default?.keep_original_ratio ?? true
+        const karras = options.karras ?? ctx.client.config.advanced_generate?.default?.karras ?? false
+        const share_result = options.shareResult ?? ctx.client.config.advanced_generate?.default?.share
+        const lora_raw = options.lora
+        const ti_raw = options.textualInversion ?? advancedGenerateConfig.default?.tis
+        const hires_fix = options.hiresFix ?? style.hires_fix ?? advancedGenerateConfig.default?.hires_fix
+        const qr_code_url = options.qrCodeUrl
+        const clipskip = options.clipSkip ?? style?.clip_skip ?? ctx.client.config.advanced_generate?.default?.clip_skip
+        let img = options.sourceImage
 
         const user_token = await ctx.client.getUserToken(ctx.interaction.user.id, ctx.database)
         const ai_horde_user = await ctx.ai_horde_manager.findUser({token: user_token  || ctx.client.config?.default_token || "0000000000"}).catch((e) => ctx.client.config.advanced?.dev ? console.error(e) : null);
@@ -336,18 +392,18 @@ export default class extends Command {
         if(lora_raw?.startsWith("preset:")) {
             if(ctx.client.config.advanced_generate?.lora_presets?.enabled === false) return ctx.error({error: "LoRA presets are disabled.", codeblock: false})
             if(!ctx.database) return ctx.error({error: "The database is disabled. Persistent LoRA presets require a database.", codeblock: false})
-            const preset = await ctx.database.getLoraPreset(lora_raw.slice("preset:".length), ctx.interaction.user.id)
-            if(!preset) return ctx.error({error: "That LoRA preset was not found or does not belong to you.", codeblock: false})
-            if(!preset.items.length) return ctx.error({error: "That LoRA preset is empty. Edit it before generating.", codeblock: false})
-            const maxPresetLoras = ctx.client.config.advanced_generate?.lora_presets?.max_loras_per_preset ?? 5
-            if(preset.items.length > maxPresetLoras) return ctx.error({error: `That preset exceeds the current limit of ${maxPresetLoras} LoRAs. Edit it before generating.`, codeblock: false})
-            if(preset.items.some(item => getLoraStrengthValidationError(item.strength))) return ctx.error({error: "That preset contains a LoRA strength outside the supported 0 to 5 range. Edit it before generating.", codeblock: false})
-            if(!ctx.client.config.advanced_generate?.user_restrictions?.allow_nsfw && preset.items.some(item => item.nsfw)) return ctx.error({error: "That preset contains an NSFW LoRA, which is not allowed by this bot.", codeblock: false})
-            selected_preset_name = preset.name
-            requested_loras.push(...preset.items.map(item => ({name: item.lora_id.toString(), model: item.strength, clip: item.strength, inject_trigger: "any"})))
-            requested_lora_labels.push(...preset.items.map(item => `${item.lora_name} (${item.strength})`))
+            const requestedPresetId = lora_raw.slice("preset:".length)
+            if(presetOverride && (presetOverride.id !== requestedPresetId || presetOverride.owner_id !== ctx.interaction.user.id)) {
+                return ctx.error({error: "The adjusted LoRA preset no longer matches this generation request.", codeblock: false})
+            }
+            const preset = presetOverride ?? await ctx.database.getLoraPreset(requestedPresetId, ctx.interaction.user.id)
+            const validationError = validatePresetForGeneration(ctx, preset)
+            if(validationError) return ctx.error({error: validationError, codeblock: false})
+            selected_preset_name = preset!.name
+            requested_loras.push(...preset!.items.map(item => ({name: item.lora_id.toString(), model: item.strength, clip: item.strength, inject_trigger: "any"})))
+            requested_lora_labels.push(...preset!.items.map(item => `${item.lora_name} (${item.strength})`))
         } else if(lora_raw) {
-            const lora = await ctx.client.fetchLORAByID(lora_raw, ctx.client.config.advanced_generate.user_restrictions?.allow_nsfw).catch(error => {
+            const lora = await ctx.client.fetchLORAByID(lora_raw, advancedGenerateConfig.user_restrictions?.allow_nsfw).catch(error => {
                 if(ctx.client.config.advanced?.dev) console.error(error)
                 return null
             })
@@ -399,7 +455,7 @@ export default class extends Command {
         height = requestedHeight ?? height
         width = requestedWidth ?? width
 
-        if(ctx.client.config.advanced_generate.convert_a1111_weight_to_horde_weight) {
+        if(advancedGenerateConfig.convert_a1111_weight_to_horde_weight) {
             prompt = prompt.replace(/(\(+|\[+)|(?<!:\d(\.\d+)?)(\)+|]+)/g, (w) => {
                 if(w.startsWith("(") || w.startsWith("[")) return "("
                 if(w.startsWith(":")) return w;
@@ -472,7 +528,7 @@ export default class extends Command {
                 workflow: qr_code_url ? "qr_code" : undefined,
                 extra_texts: qr_code_url ? [{text: qr_code_url, reference: "qr_code"}] : undefined
             },
-            replacement_filter: ctx.client.config.advanced_generate.replacement_filter,
+            replacement_filter: advancedGenerateConfig.replacement_filter,
             nsfw: ctx.client.config.advanced_generate?.user_restrictions?.allow_nsfw,
             censor_nsfw: ctx.client.config.advanced_generate?.censor_nsfw,
             trusted_workers: ctx.client.config.advanced_generate?.trusted_workers,
@@ -551,7 +607,7 @@ ETA: <t:${Math.floor(Date.now()/1000)+(start_status?.wait_time ?? 0)}:R>`], [lor
 
         const btn = new ButtonBuilder({
             label: "Cancel",
-            custom_id: `cancel_gen_${generation_start.id}`,
+            custom_id: `cancel_gen_${ctx.interaction.user.id}_${generation_start.id}`,
             style: 4
         })
         const delete_btn: InteractionButtonComponentData = {
@@ -781,7 +837,7 @@ ETA: <t:${Math.floor(Date.now()/1000)+(status?.wait_time ?? 0)}:R>`
         }
     }
 
-    override async autocomplete(context: AutocompleteContext): Promise<any> {
+async function autocompleteAdvancedGeneration(context: AutocompleteContext): Promise<any> {
         const option = context.interaction.options.getFocused(true)
         const clampChoiceName = (name: string) => name.length <= 100 ? name : `${name.slice(0, 97)}...`
         switch(option.name) {
@@ -841,5 +897,4 @@ ETA: <t:${Math.floor(Date.now()/1000)+(status?.wait_time ?? 0)}:R>`
                 return await context.interaction.respond(ret.slice(0, 25)).catch(() => null)
             }
         }
-    }
 }

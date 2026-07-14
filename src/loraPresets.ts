@@ -81,7 +81,7 @@ export function validatePresetName(name: string): string | undefined {
 }
 
 export function getLoraStrengthValidationError(strength: number): string | undefined {
-    if(!Number.isFinite(strength) || strength < 0 || strength > 5) return "Strength must be a number from 0 to 5.";
+    if(!Number.isFinite(strength) || strength < -5 || strength > 5) return "Strength must be a number from -5 to 5.";
     return undefined;
 }
 

@@ -15,7 +15,18 @@ export async function handleMessageReact(reaction: PartialMessageReaction | Mess
     if(!target_user?.id) return await r.users.remove(u)
     if(target_user.bot && (r.message.interaction?.commandName === "generate" || r.message.interaction?.commandName === "advanced_generate")) {
         target_user = r.message.interaction.user
-    } else if (target_user.bot) return await r.users.remove(u)
+    } else if(target_user.bot) {
+        const deleteButton = r.message.components
+            .flatMap(row => row.components)
+            .find(component => component.customId?.startsWith("delete_"))
+        const ownerId = deleteButton?.customId?.slice("delete_".length)
+        if(!ownerId || !/^\d{17,20}$/.test(ownerId)) return await r.users.remove(u)
+        const fetchedOwner = await client.users.fetch(ownerId).catch(() => null)
+        if(!fetchedOwner) return await r.users.remove(u)
+        target_user = fetchedOwner
+        if(target_user.bot) return await r.users.remove(u)
+    }
+    if(!target_user) return await r.users.remove(u)
     if(target_user?.id === u.id) return await r.users.remove(u)
     if(!usertoken) {
         await r.users.remove(u)

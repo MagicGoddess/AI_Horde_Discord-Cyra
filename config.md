@@ -162,7 +162,7 @@ Here you can see an explanation of what which option does
             "allow_nsfw": Set to true if you want to allow NSFW image generation for your users (BOOLEAN),
             "allow_sharing": (BOOLEAN) *5,
             "allow_rating": Allow the user to rate their generated images (BOOLEAN),
-            "allow_lora": Allow direct LoRA selection and personal LoRA presets (BOOLEAN)
+            "allow_lora": Allow direct LoRA selection and personal LoRA presets (BOOLEAN). When presets are enabled, this also exposes `adjust_lora_strengths` in `/advanced_generate`.
         }
     },
     "generate": {
@@ -251,6 +251,8 @@ Here you can see an explanation of what which option does
 ```
 
 When `database.type` is set to `"sqlite"`, the bot stores database data in a local file and ignores the `DB_*` environment variables. SQLite support is intended for fresh, local, single-instance deployments.
+
+The optional `/advanced_generate` arguments must fit Discord's 25-option limit. The bot reports a configuration error during startup if the enabled restrictions exceed that limit. Personal preset strengths accept Horde's supported range of -5 to 5. Enabling `adjust_lora_strengths` opens a one-generation editor and never changes the saved preset.
 
 `*1` See API Documentation for reference (https://aihorde.net/api)  
 `*2` Available Samplers: k_lms, k_heun, k_euler, k_euler_a, k_dpm_2, k_dpm_2_a, DDIM, PLMS, k_dpm_fast, k_dpm_adaptive, k_dpmpp_2s_a, k_dpmpp_2m, dpmsolver  
