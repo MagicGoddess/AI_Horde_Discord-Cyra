@@ -109,10 +109,37 @@ export interface PendingKudosRecord {
     updated_at: Date
 }
 
+export interface LoraPresetItem {
+    lora_id: number,
+    lora_name: string,
+    base_model?: string,
+    nsfw: boolean,
+    strength: number,
+    position: number
+}
+
+export interface LoraPreset {
+    id: string,
+    owner_id: string,
+    name: string,
+    normalized_name: string,
+    created_at: Date,
+    updated_at: Date,
+    items: LoraPresetItem[]
+}
+
+export interface SaveLoraPresetInput {
+    id: string,
+    owner_id: string,
+    name: string,
+    items: Omit<LoraPresetItem, "position">[]
+}
+
 export interface DatabaseCounts {
     user_tokens: number,
     parties: number,
-    pending_kudos: number
+    pending_kudos: number,
+    lora_presets: number
 }
 
 export interface CreatePartyInput {
@@ -153,6 +180,10 @@ export interface DatabaseAdapter {
     upsertPendingKudos(unique_id: string, target_id: string, from_id: string, amount: number): Promise<PendingKudosRecord | undefined>,
     claimPendingKudos(target_id: string): Promise<PendingKudosRecord[]>,
     deleteExpiredPendingKudos(cutoff: Date): Promise<number>,
+    getLoraPreset(id: string, owner_id: string): Promise<LoraPreset | undefined>,
+    listLoraPresets(owner_id: string): Promise<LoraPreset[]>,
+    saveLoraPreset(input: SaveLoraPresetInput): Promise<LoraPreset | undefined>,
+    deleteLoraPreset(id: string, owner_id: string): Promise<boolean>,
     getCounts(): Promise<DatabaseCounts>
 }
 
@@ -355,6 +386,11 @@ export interface Config {
         update_generation_status_interval_seconds?: number,
         improve_loading_time?: boolean,
         convert_a1111_weight_to_horde_weight?: boolean,
+        lora_presets?: {
+            enabled?: boolean,
+            max_presets_per_user?: number,
+            max_loras_per_preset?: number
+        },
         default?: {
             tiling?: boolean,
             steps?: number,

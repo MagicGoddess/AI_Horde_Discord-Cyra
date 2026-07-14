@@ -84,7 +84,12 @@ Here you can see an explanation of what which option does
         "blacklist_regex": A regex version of blacklisted_words, allows blacklisting negative and positive prompt (check for ###) and multiple words together (STRING),
         "update_generation_status_interval_seconds": The interval at which the embed in Discord gets updated (INTEGER),
         "convert_a1111_weight_to_horde_weight": Whether to convert a1111 to weighted prompt required by the api (BOOLEAN) *7 *8,
-        "improve_loading_time": Try to improve the displaying time between generation finished and generation displayed in discord (BOOLEAN) *7
+        "improve_loading_time": Try to improve the displaying time between generation finished and generation displayed in discord (BOOLEAN) *7,
+        "lora_presets": {
+            "enabled": Enable persistent personal LoRA presets and the `/lora_preset` command (BOOLEAN),
+            "max_presets_per_user": Maximum saved presets per Discord user (INTEGER; 1-25; DEFAULT: 25),
+            "max_loras_per_preset": Maximum LoRAs in one preset (INTEGER; 1-25; DEFAULT: 5)
+        },
         "default": {
             "tiling": Whether the result should be tileable if nothing is specified (BOOLEAN) *1,
             "steps": How many steps to go through by default if nothing is specified (INTEGER) *1,
@@ -156,7 +161,8 @@ Here you can see an explanation of what which option does
             "allow_karras": (BOOLEAN) * 5,
             "allow_nsfw": Set to true if you want to allow NSFW image generation for your users (BOOLEAN),
             "allow_sharing": (BOOLEAN) *5,
-            "allow_rating": Allow the user to rate their generated images (BOOLEAN)
+            "allow_rating": Allow the user to rate their generated images (BOOLEAN),
+            "allow_lora": Allow direct LoRA selection and personal LoRA presets (BOOLEAN)
         }
     },
     "generate": {

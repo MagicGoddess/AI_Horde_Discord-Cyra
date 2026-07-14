@@ -55,11 +55,12 @@ export class Store <T extends StoreTypes> {
     async getCommand(interaction: ChatInputCommandInteraction | AutocompleteInteraction): Promise<Command> {
         if(!this.loaded_classes.size) throw new Error("No commands loaded")
         if(this.storetype !== StoreTypes.COMMANDS) throw new Error("Wrong class type loaded")
-        let command_name = interaction.commandName
+        const base_command_name = interaction.commandName
+        let command_name = base_command_name
         if(interaction.options.getSubcommandGroup(false)) command_name += `_${interaction.options.getSubcommandGroup()}`
         if(interaction.options.getSubcommand(false)) command_name += `_${interaction.options.getSubcommand()}`
 
-        const command = this.loaded_classes.get(command_name)
+        const command = this.loaded_classes.get(command_name) ?? this.loaded_classes.get(base_command_name)
 
         if(!command) throw new Error("Unable to find command")
         return command as Command

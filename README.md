@@ -29,6 +29,12 @@ A personal fork of ZeldaFan0225/AI_Horde_Discord, with added features.
 - Progressive generation previews: `/generate` and `/advanced_generate` now attach completed images to the same generation message as soon as each image is finished, instead of waiting for the full batch.
 - Generation timing: `/generate`, `/advanced_generate`, and remix now show how long a generation took when it completes successfully, and include elapsed time in system/API failure messages.
 - Failed generation summaries: `/generate` and `/advanced_generate` now keep a final failure embed with request details such as prompt, style, kudos consumed, elapsed time, and generation ID instead of dropping the embed entirely when the request faults or times out.
+- Personal LoRA presets provide reusable multi-LoRA setups for `/advanced_generate`.
+  - Use `/lora_preset create`, `edit`, `list`, and `delete` to manage private presets through an ephemeral editor.
+  - Each LoRA has one strength applied to both model and CLIP, and Horde automatically injects an available trigger word.
+  - The existing `lora` generation option lists personal presets first while retaining direct single CivitAI model-page IDs for one-off use.
+  - Presets require a configured database; direct LoRA selection remains available when the database is disabled.
+  - Defaults allow 25 presets per user and five LoRAs per preset; both limits are configurable under `advanced_generate.lora_presets`.
 - Graceful Discord gateway recovery prevents temporary DNS or network failures from leaving the bot online but unresponsive.
   - Monitors gateway readiness and acknowledged heartbeats while allowing discord.js to perform its native reconnection first.
   - Exits with an error when the gateway remains unhealthy beyond `connection_health.grace_period_seconds`, allowing PM2 to restart the bot with exponential backoff.
@@ -86,7 +92,7 @@ Optional:
 
 ### A detailed Linux setup can be found [here](https://github.com/ZeldaFan0225/AI_Horde_Discord/blob/main/DB_SETUP.md)
 
-SQLite support is intended for local, single-instance deployments and fresh SQLite databases only.
+SQLite support is intended for local, single-instance deployments. Required tables and additive schema changes are initialized automatically on startup.
 
 1) download the code from this repository  
 2) get the token of your discord bot (https://discord.com/developers/docs/reference#authentication)  

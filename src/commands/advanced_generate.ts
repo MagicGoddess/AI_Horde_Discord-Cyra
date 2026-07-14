@@ -9,6 +9,7 @@ import { formatDuration } from "../formatDuration";
 const {buffer2webpbuffer} = require("webp-converter")
 import { appendFileSync } from "fs"
 import { ImageGenerationInput, ModelGenerationInputStableSamplers, ModelGenerationInputPostProcessingTypes } from "@zeldafan0225/ai_horde";
+import { getLoraValidationError } from "../loraPresets";
 
 const config = JSON.parse(readFileSync("./config.json").toString()) as Config
 
@@ -198,7 +199,7 @@ const command_data = new SlashCommandBuilder()
             .addStringOption(
                 new SlashCommandStringOption()
                 .setName("lora")
-                .setDescription("The LORA, LoCon or LyCORIS to use for this request")
+                .setDescription("A personal LoRA preset or one CivitAI LoRA to use")
                 .setAutocomplete(true)
             )
         }
@@ -298,7 +299,7 @@ export default class extends Command {
         const keep_ratio = ctx.interaction.options.getBoolean("keep_original_ratio") ?? ctx.client.config.advanced_generate?.default?.keep_original_ratio ?? true
         const karras = ctx.interaction.options.getBoolean("karras") ?? ctx.client.config.advanced_generate?.default?.karras ?? false
         const share_result = ctx.interaction.options.getBoolean("share_result") ?? ctx.client.config.advanced_generate?.default?.share
-        const lora_id = ctx.interaction.options.getString("lora")
+        const lora_raw = ctx.interaction.options.getString("lora")
         const ti_raw = ctx.interaction.options.getString("textual_inversion") ?? ctx.client.config.advanced_generate.default?.tis
         const hires_fix = ctx.interaction.options.getBoolean("hires_fix") ?? style.hires_fix ?? ctx.client.config.advanced_generate.default?.hires_fix
         const qr_code_url = ctx.interaction.options.getString("qr_code_url")
@@ -309,20 +310,43 @@ export default class extends Command {
         const ai_horde_user = await ctx.ai_horde_manager.findUser({token: user_token  || ctx.client.config?.default_token || "0000000000"}).catch((e) => ctx.client.config.advanced?.dev ? console.error(e) : null);
         const can_bypass = ctx.client.config.advanced_generate?.source_image?.whitelist?.bypass_checks && ctx.client.config.advanced_generate?.source_image?.whitelist?.user_ids?.includes(ctx.interaction.user.id)
 
-        if(lora_id) {
-            const lora = await ctx.client.fetchLORAByID(lora_id, ctx.client.config.advanced_generate.user_restrictions?.allow_nsfw)
+        const requested_loras: {name: string, model?: number, clip?: number, inject_trigger?: string}[] = []
+        const requested_lora_labels: string[] = []
+        let selected_preset_name: string | undefined
+        if(lora_raw?.startsWith("preset:")) {
+            if(ctx.client.config.advanced_generate?.lora_presets?.enabled === false) return ctx.error({error: "LoRA presets are disabled.", codeblock: false})
+            if(!ctx.database) return ctx.error({error: "The database is disabled. Persistent LoRA presets require a database.", codeblock: false})
+            const preset = await ctx.database.getLoraPreset(lora_raw.slice("preset:".length), ctx.interaction.user.id)
+            if(!preset) return ctx.error({error: "That LoRA preset was not found or does not belong to you.", codeblock: false})
+            if(!preset.items.length) return ctx.error({error: "That LoRA preset is empty. Edit it before generating.", codeblock: false})
+            const maxPresetLoras = ctx.client.config.advanced_generate?.lora_presets?.max_loras_per_preset ?? 5
+            if(preset.items.length > maxPresetLoras) return ctx.error({error: `That preset exceeds the current limit of ${maxPresetLoras} LoRAs. Edit it before generating.`, codeblock: false})
+            if(!ctx.client.config.advanced_generate?.user_restrictions?.allow_nsfw && preset.items.some(item => item.nsfw)) return ctx.error({error: "That preset contains an NSFW LoRA, which is not allowed by this bot.", codeblock: false})
+            selected_preset_name = preset.name
+            requested_loras.push(...preset.items.map(item => ({name: item.lora_id.toString(), model: item.strength, clip: item.strength, inject_trigger: "any"})))
+            requested_lora_labels.push(...preset.items.map(item => `${item.lora_name} (${item.strength})`))
+        } else if(lora_raw) {
+            const lora = await ctx.client.fetchLORAByID(lora_raw, ctx.client.config.advanced_generate.user_restrictions?.allow_nsfw).catch(error => {
+                if(ctx.client.config.advanced?.dev) console.error(error)
+                return null
+            })
             if(ctx.client.config.advanced?.dev) console.log(lora)
-            if(!lora) return ctx.error({error: "A LORA ID from https://civitai.com/ has to be given. LoCon and LyCORIS are also acceptable.", codeblock: false})
-            if(lora.type !== "LORA" && lora.type !== "LoCon") return ctx.error({error: "The given ID is not a LORA, LoCon or LyCORIS"})
-            if(lora.modelVersions[0]?.files[0]?.sizeKB && lora.modelVersions[0]?.files[0]?.sizeKB > 225280 && !ctx.client.horde_curated_loras?.includes(lora.id)) return ctx.error({error: "The given LORA, LoCon or LyCORIS is larger than 220mb"})
+            if(!lora) return ctx.error({error: "A LoRA model-page ID from https://civitai.com/ has to be given. LoCon and LyCORIS are also acceptable.", codeblock: false})
+            const validationError = getLoraValidationError(ctx.client, lora)
+            if(validationError) return ctx.error({error: validationError, codeblock: false})
+            requested_loras.push({name: lora.id.toString(), model: 1, clip: 1, inject_trigger: "any"})
+            requested_lora_labels.push(`${lora.name} (1)`)
         }
         const lora_obj = [
             ...(style?.loras ?? []),
-            ...(lora_id ? [{
-                "name": lora_id,
-                "inject_trigger": "all"
-            }] : [])
+            ...requested_loras
         ];
+        const lora_labels = [
+            ...(style?.loras ?? []).map(lora => `${lora.name} (${lora.model ?? 1})`),
+            ...requested_lora_labels
+        ]
+        const lora_label_text = lora_labels.join(", ")
+        const lora_summary = lora_labels.length ? `\n**LoRAs** ${lora_label_text.length > 1500 ? `${lora_label_text.slice(0, 1497)}...` : lora_label_text}${selected_preset_name ? `\n**LoRA Preset** ${selected_preset_name}` : ""}` : ""
 
         if(party?.channel_id && !party.advanced_generate_allowed) return ctx.error({error: `You can only use ${await ctx.client.getSlashCommandTag("generate")} in parties unless advanced generation is enabled for that party`, codeblock: false})
         if(party?.style && requestedStyleRaw && party.style !== requestedStyleRaw.toLowerCase()) return ctx.error({error: `Please use the style '${party.style}' for this party`})
@@ -486,6 +510,7 @@ export default class extends Command {
             description: `Position: \`${start_status?.queue_position}\`/\`${start_horde_data.queued_requests}\`
 Kudos consumed: \`${start_status?.kudos}\`
 Workers: \`${start_horde_data.worker_count}\`
+${lora_summary}
 
 \`${start_status?.waiting}\`/\`${amount}\` Images waiting
 \`${start_status?.processing}\`/\`${amount}\` Images processing
@@ -562,7 +587,7 @@ ETA: <t:${Math.floor(Date.now()/1000)+(start_status?.wait_time ?? 0)}:R>`
             const failure_embed = new EmbedBuilder({
                 color: Colors.Red,
                 title: "Generation Failed",
-                description: `**Prompt** ${prompt}\n**Style** ${style_raw}\n**Kudos Consumed** \`${status?.kudos ?? start_status?.kudos ?? "Unknown"}\`\n**Time Taken** \`${getElapsedGenerationTime()}\`\n**Failure Reason** \`${reason}\``,
+                description: `**Prompt** ${prompt}\n**Style** ${style_raw}${lora_summary}\n**Kudos Consumed** \`${status?.kudos ?? start_status?.kudos ?? "Unknown"}\`\n**Time Taken** \`${getElapsedGenerationTime()}\`\n**Failure Reason** \`${reason}\``,
                 footer: generation_start?.id ? {text: `Generation ID ${generation_start.id}`} : undefined,
                 thumbnail: img_data ? {url: img!.url} : undefined
             })
@@ -679,7 +704,7 @@ ETA: <t:${Math.floor(Date.now()/1000)+(status?.wait_time ?? 0)}:R>`
                     const embeds = [
                         new EmbedBuilder({
                             title: "Generation Finished",
-                            description: `**Prompt** ${prompt}\n**Style** ${style_raw}\n**Kudos Consumed** \`${images.kudos}\`\n**Time Taken** \`${getElapsedGenerationTime()}\`${image_map.length !== amount ? "\nCensored Images are not displayed" : ""}`,
+                            description: `**Prompt** ${prompt}\n**Style** ${style_raw}${lora_summary}\n**Kudos Consumed** \`${images.kudos}\`\n**Time Taken** \`${getElapsedGenerationTime()}\`${image_map.length !== amount ? "\nCensored Images are not displayed" : ""}`,
                             color: Colors.Blue,
                             footer: {text: `Generation ID ${generation_start!.id}`},
                             thumbnail: img_data && image_map.length < 10 ? {url: "attachment://original.webp"} : img_data ? {url: img!.url} : undefined
@@ -701,7 +726,7 @@ ETA: <t:${Math.floor(Date.now()/1000)+(status?.wait_time ?? 0)}:R>`
                         title: `Image ${i+1}`,
                         image: {url: `attachment://${g.seed ?? `image${i}`}.webp`},
                         color: Colors.Blue,
-                        description: `**Seed:** ${g.seed}\n**Model:** ${g.model}\n**Generated by** ${g.worker_name}\n(\`${g.worker_id}\`)${!i ? `\n**Prompt:** ${prompt}\n**Total Kudos Cost:** \`${images.kudos}\`\n**Time Taken:** \`${getElapsedGenerationTime()}\`` : ""}${ctx.client.config.advanced?.dev ? `\n\n**Image ID** ${g.id}` : ""}`,
+                        description: `**Seed:** ${g.seed}\n**Model:** ${g.model}\n**Generated by** ${g.worker_name}\n(\`${g.worker_id}\`)${!i ? `\n**Prompt:** ${prompt}${lora_summary}\n**Total Kudos Cost:** \`${images.kudos}\`\n**Time Taken:** \`${getElapsedGenerationTime()}\`` : ""}${ctx.client.config.advanced?.dev ? `\n\n**Image ID** ${g.id}` : ""}`,
                     })
                     if(img_data) embed.setThumbnail(`attachment://original.webp`)
                     return {attachment, embed}
@@ -748,28 +773,39 @@ ETA: <t:${Math.floor(Date.now()/1000)+(status?.wait_time ?? 0)}:R>`
                 return await context.interaction.respond(ret.slice(0,25))
             }
             case "lora": {
-                const ret = []
+                const ret: {name: string, value: string}[] = []
+                const query = option.value.trim()
 
-                if(!isNaN(Number(option.value)) && option.value) {
-                    const lora_by_id = await context.client.fetchLORAByID(option.value, context.client.config.advanced_generate?.user_restrictions?.allow_nsfw)
+                if(context.database && context.client.config.advanced_generate?.lora_presets?.enabled !== false) {
+                    const presets = await context.database.listLoraPresets(context.interaction.user.id)
+                    ret.push(...presets
+                        .filter(preset => !query || preset.name.toLowerCase().includes(query.toLowerCase()))
+                        .map(preset => ({
+                            name: clampChoiceName(`Preset • ${preset.name} • ${preset.items.length} LoRA${preset.items.length === 1 ? "" : "s"}`),
+                            value: `preset:${preset.id}`
+                        })))
+                }
 
-                    if(lora_by_id?.name && (lora_by_id?.modelVersions[0]?.files[0]?.sizeKB && (lora_by_id?.modelVersions[0]?.files[0]?.sizeKB <= 225280 || context.client.horde_curated_loras?.includes(lora_by_id.id)))) ret.push({
-                        name: clampChoiceName(lora_by_id.name),
+                if(!isNaN(Number(query)) && query) {
+                    const lora_by_id = await context.client.fetchLORAByID(query, context.client.config.advanced_generate?.user_restrictions?.allow_nsfw).catch(() => null)
+
+                    if(lora_by_id?.name && !getLoraValidationError(context.client, lora_by_id)) ret.push({
+                        name: clampChoiceName(`LoRA • ${lora_by_id.name}${lora_by_id.modelVersions[0]?.baseModel ? ` • ${lora_by_id.modelVersions[0].baseModel}` : ""}`),
                         value: lora_by_id.id.toString()
                     })
-                } else {
-                    const loras = await context.client.fetchLORAs(option.value, 5, context.client.config.advanced_generate?.user_restrictions?.allow_nsfw)
+                } else if(query) {
+                    const loras = await context.client.fetchLORAs(query, 10, context.client.config.advanced_generate?.user_restrictions?.allow_nsfw).catch(() => null)
     
                     ret.push(
-                        ...loras.items.filter(l => l?.name && l?.id.toString()).map(l => ({
-                            name: clampChoiceName(l!.name),
-                            value: l!.id.toString()
+                        ...(loras?.items ?? []).filter(l => l?.name && l?.id.toString() && !getLoraValidationError(context.client, l)).map(l => ({
+                            name: clampChoiceName(`LoRA • ${l.name}${l.modelVersions[0]?.baseModel ? ` • ${l.modelVersions[0].baseModel}` : ""}`),
+                            value: l.id.toString()
                         }))
                     )
                 }
 
                 // the api isn't particularly fast, so sometimes it might send the result too late
-                return await context.interaction.respond(ret.slice(0,25)).catch(() => null)
+                return await context.interaction.respond(ret.slice(0, 25)).catch(() => null)
             }
         }
     }

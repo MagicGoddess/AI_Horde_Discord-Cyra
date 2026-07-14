@@ -103,6 +103,10 @@ async function initializeClient() {
     }
     await client.application?.commands.set([...client.commands.createPostBody(), ...client.contexts.createPostBody()]).catch(console.error)
     if((client.config.advanced_generate?.user_restrictions?.amount?.max ?? 4) > 10) throw new Error("More than 10 images are not supported in the bot")
+    const maxLoraPresets = client.config.advanced_generate?.lora_presets?.max_presets_per_user ?? 25
+    const maxLorasPerPreset = client.config.advanced_generate?.lora_presets?.max_loras_per_preset ?? 5
+    if(maxLoraPresets < 1 || maxLoraPresets > 25) throw new Error("advanced_generate.lora_presets.max_presets_per_user must be between 1 and 25")
+    if(maxLorasPerPreset < 1 || maxLorasPerPreset > 25) throw new Error("advanced_generate.lora_presets.max_loras_per_preset must be between 1 and 25")
     if(client.config.filter_actions?.guilds?.length && (client.config.filter_actions?.mode !== "whitelist" && client.config.filter_actions?.mode !== "blacklist")) throw new Error("The actions filter mode must be set to either whitelist, blacklist.")
     if(client.config.party?.enabled && !client.config.generate?.enabled) throw new Error("When party is enabled the /generate command also needs to be enabled")
 

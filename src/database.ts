@@ -2,7 +2,7 @@ import { existsSync, mkdirSync } from "fs";
 import path from "path";
 import Database from "better-sqlite3";
 import { Pool } from "pg";
-import { Config, CreatePartyInput, DatabaseAdapter, DatabaseCounts, Party, PendingKudosRecord, UpdatePartyInput, UserTokenRecord } from "./types";
+import { Config, CreatePartyInput, DatabaseAdapter, DatabaseCounts, LoraPreset, LoraPresetItem, Party, PendingKudosRecord, SaveLoraPresetInput, UpdatePartyInput, UserTokenRecord } from "./types";
 
 type RawPartyRow = {
     index: number,
@@ -29,6 +29,16 @@ type RawPendingKudosRow = {
     from_id: string,
     amount: number,
     updated_at: string | Date
+}
+
+type RawLoraPresetRow = Omit<LoraPreset, "created_at" | "updated_at" | "items"> & {
+    created_at: string | Date,
+    updated_at: string | Date
+}
+
+type RawLoraPresetItemRow = Omit<LoraPresetItem, "nsfw"> & {
+    preset_id: string,
+    nsfw: boolean | number
 }
 
 function normalizeParty(row: RawPartyRow | undefined): Party | undefined {
@@ -60,6 +70,18 @@ function normalizePendingKudos(row: RawPendingKudosRow): PendingKudosRecord {
     };
 }
 
+function normalizeLoraPreset(row: RawLoraPresetRow, items: RawLoraPresetItemRow[]): LoraPreset {
+    return {
+        ...row,
+        created_at: row.created_at instanceof Date ? row.created_at : new Date(row.created_at),
+        updated_at: row.updated_at instanceof Date ? row.updated_at : new Date(row.updated_at),
+        items: items
+            .filter(item => item.preset_id === row.id)
+            .sort((a, b) => a.position - b.position)
+            .map(({preset_id: _preset_id, ...item}) => ({...item, nsfw: typeof item.nsfw === "boolean" ? item.nsfw : !!item.nsfw}))
+    };
+}
+
 function parseStringArray(value: string | null | undefined): string[] {
     if(!value) return [];
     try {
@@ -87,6 +109,8 @@ class PostgresAdapter implements DatabaseAdapter {
         await this.pool.query("ALTER TABLE parties ADD COLUMN IF NOT EXISTS height INT");
         await this.pool.query("ALTER TABLE parties ADD COLUMN IF NOT EXISTS advanced_generate_allowed BOOLEAN NOT NULL DEFAULT false");
         await this.pool.query("CREATE TABLE IF NOT EXISTS pending_kudos (index SERIAL, unique_id VARCHAR(200) PRIMARY KEY, target_id VARCHAR(100) NOT NULL, from_id VARCHAR(100) NOT NULL, amount int NOT NULL, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)");
+        await this.pool.query("CREATE TABLE IF NOT EXISTS lora_presets (id VARCHAR(36) PRIMARY KEY, owner_id VARCHAR(100) NOT NULL, name VARCHAR(50) NOT NULL, normalized_name VARCHAR(50) NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(owner_id, normalized_name))");
+        await this.pool.query("CREATE TABLE IF NOT EXISTS lora_preset_items (preset_id VARCHAR(36) NOT NULL REFERENCES lora_presets(id) ON DELETE CASCADE, position INT NOT NULL, lora_id INT NOT NULL, lora_name VARCHAR(255) NOT NULL, base_model VARCHAR(255), nsfw BOOLEAN NOT NULL DEFAULT false, strength REAL NOT NULL DEFAULT 1, PRIMARY KEY(preset_id, position), UNIQUE(preset_id, lora_id))");
     }
 
     async getUserToken(user_id: string): Promise<UserTokenRecord | undefined> {
@@ -181,12 +205,58 @@ class PostgresAdapter implements DatabaseAdapter {
         return result.rowCount || 0;
     }
 
+    async getLoraPreset(id: string, owner_id: string): Promise<LoraPreset | undefined> {
+        const preset = await this.pool.query<RawLoraPresetRow>("SELECT * FROM lora_presets WHERE id=$1 AND owner_id=$2", [id, owner_id]);
+        if(!preset.rows[0]) return undefined;
+        const items = await this.pool.query<RawLoraPresetItemRow>("SELECT * FROM lora_preset_items WHERE preset_id=$1 ORDER BY position", [id]);
+        return normalizeLoraPreset(preset.rows[0], items.rows);
+    }
+
+    async listLoraPresets(owner_id: string): Promise<LoraPreset[]> {
+        const presets = await this.pool.query<RawLoraPresetRow>("SELECT * FROM lora_presets WHERE owner_id=$1 ORDER BY normalized_name", [owner_id]);
+        if(!presets.rows.length) return [];
+        const items = await this.pool.query<RawLoraPresetItemRow>("SELECT i.* FROM lora_preset_items i JOIN lora_presets p ON p.id=i.preset_id WHERE p.owner_id=$1 ORDER BY i.preset_id, i.position", [owner_id]);
+        return presets.rows.map(row => normalizeLoraPreset(row, items.rows));
+    }
+
+    async saveLoraPreset(input: SaveLoraPresetInput): Promise<LoraPreset | undefined> {
+        const client = await this.pool.connect();
+        try {
+            await client.query("BEGIN");
+            const saved = await client.query(
+                "INSERT INTO lora_presets (id, owner_id, name, normalized_name) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET name=$3, normalized_name=$4, updated_at=CURRENT_TIMESTAMP WHERE lora_presets.owner_id=$2 RETURNING id",
+                [input.id, input.owner_id, input.name, input.name.trim().toLowerCase()]
+            );
+            if(!saved.rows[0]) throw new Error("Unable to update a LoRA preset owned by another user");
+            await client.query("DELETE FROM lora_preset_items WHERE preset_id=$1", [input.id]);
+            for(const [position, item] of input.items.entries()) {
+                await client.query(
+                    "INSERT INTO lora_preset_items (preset_id, position, lora_id, lora_name, base_model, nsfw, strength) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                    [input.id, position, item.lora_id, item.lora_name, item.base_model ?? null, item.nsfw, item.strength]
+                );
+            }
+            await client.query("COMMIT");
+        } catch(error) {
+            await client.query("ROLLBACK");
+            throw error;
+        } finally {
+            client.release();
+        }
+        return this.getLoraPreset(input.id, input.owner_id);
+    }
+
+    async deleteLoraPreset(id: string, owner_id: string): Promise<boolean> {
+        const result = await this.pool.query("DELETE FROM lora_presets WHERE id=$1 AND owner_id=$2", [id, owner_id]);
+        return (result.rowCount || 0) > 0;
+    }
+
     async getCounts(): Promise<DatabaseCounts> {
-        const result = await this.pool.query<DatabaseCounts>("SELECT (SELECT COUNT(*) FROM user_tokens) as user_tokens, (SELECT COUNT(*) FROM parties) as parties, (SELECT COUNT(*) FROM pending_kudos) as pending_kudos");
+        const result = await this.pool.query<DatabaseCounts>("SELECT (SELECT COUNT(*) FROM user_tokens) as user_tokens, (SELECT COUNT(*) FROM parties) as parties, (SELECT COUNT(*) FROM pending_kudos) as pending_kudos, (SELECT COUNT(*) FROM lora_presets) as lora_presets");
         return {
             user_tokens: Number(result.rows[0]?.user_tokens || 0),
             parties: Number(result.rows[0]?.parties || 0),
-            pending_kudos: Number(result.rows[0]?.pending_kudos || 0)
+            pending_kudos: Number(result.rows[0]?.pending_kudos || 0),
+            lora_presets: Number(result.rows[0]?.lora_presets || 0)
         };
     }
 }
@@ -232,7 +302,28 @@ class SqliteAdapter implements DatabaseAdapter {
                 amount INTEGER NOT NULL,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS lora_presets (
+                id TEXT PRIMARY KEY,
+                owner_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                normalized_name TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(owner_id, normalized_name)
+            );
+            CREATE TABLE IF NOT EXISTS lora_preset_items (
+                preset_id TEXT NOT NULL REFERENCES lora_presets(id) ON DELETE CASCADE,
+                position INTEGER NOT NULL,
+                lora_id INTEGER NOT NULL,
+                lora_name TEXT NOT NULL,
+                base_model TEXT,
+                nsfw INTEGER NOT NULL DEFAULT 0,
+                strength REAL NOT NULL DEFAULT 1,
+                PRIMARY KEY(preset_id, position),
+                UNIQUE(preset_id, lora_id)
+            );
         `);
+        this.db.pragma("foreign_keys = ON");
         const partyColumns = this.db.prepare("PRAGMA table_info(parties)").all() as {name: string}[];
         if(!partyColumns.some(column => column.name === "advanced_generate_allowed")) {
             this.db.prepare("ALTER TABLE parties ADD COLUMN advanced_generate_allowed INTEGER NOT NULL DEFAULT 0").run();
@@ -361,14 +452,54 @@ class SqliteAdapter implements DatabaseAdapter {
         return result.changes;
     }
 
+    async getLoraPreset(id: string, owner_id: string): Promise<LoraPreset | undefined> {
+        const preset = this.db.prepare("SELECT * FROM lora_presets WHERE id = ? AND owner_id = ?").get(id, owner_id) as RawLoraPresetRow | undefined;
+        if(!preset) return undefined;
+        const items = this.db.prepare("SELECT * FROM lora_preset_items WHERE preset_id = ? ORDER BY position").all(id) as RawLoraPresetItemRow[];
+        return normalizeLoraPreset(preset, items);
+    }
+
+    async listLoraPresets(owner_id: string): Promise<LoraPreset[]> {
+        const presets = this.db.prepare("SELECT * FROM lora_presets WHERE owner_id = ? ORDER BY normalized_name").all(owner_id) as RawLoraPresetRow[];
+        if(!presets.length) return [];
+        const items = this.db.prepare("SELECT i.* FROM lora_preset_items i JOIN lora_presets p ON p.id = i.preset_id WHERE p.owner_id = ? ORDER BY i.preset_id, i.position").all(owner_id) as RawLoraPresetItemRow[];
+        return presets.map(row => normalizeLoraPreset(row, items));
+    }
+
+    async saveLoraPreset(input: SaveLoraPresetInput): Promise<LoraPreset | undefined> {
+        const save = this.db.transaction(() => {
+            const existing = this.db.prepare("SELECT owner_id FROM lora_presets WHERE id = ?").get(input.id) as {owner_id: string} | undefined;
+            if(existing && existing.owner_id !== input.owner_id) throw new Error("Unable to update a LoRA preset owned by another user");
+            this.db.prepare(`
+                INSERT INTO lora_presets (id, owner_id, name, normalized_name, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET name = excluded.name, normalized_name = excluded.normalized_name, updated_at = excluded.updated_at
+            `).run(input.id, input.owner_id, input.name, input.name.trim().toLowerCase(), new Date().toISOString());
+            this.db.prepare("DELETE FROM lora_preset_items WHERE preset_id = ?").run(input.id);
+            const insert = this.db.prepare("INSERT INTO lora_preset_items (preset_id, position, lora_id, lora_name, base_model, nsfw, strength) VALUES (?, ?, ?, ?, ?, ?, ?)");
+            for(const [position, item] of input.items.entries()) {
+                insert.run(input.id, position, item.lora_id, item.lora_name, item.base_model ?? null, item.nsfw ? 1 : 0, item.strength);
+            }
+        });
+        save();
+        return this.getLoraPreset(input.id, input.owner_id);
+    }
+
+    async deleteLoraPreset(id: string, owner_id: string): Promise<boolean> {
+        const result = this.db.prepare("DELETE FROM lora_presets WHERE id = ? AND owner_id = ?").run(id, owner_id);
+        return result.changes > 0;
+    }
+
     async getCounts(): Promise<DatabaseCounts> {
         const userTokens = this.db.prepare("SELECT COUNT(*) as count FROM user_tokens").get() as {count: number};
         const parties = this.db.prepare("SELECT COUNT(*) as count FROM parties").get() as {count: number};
         const pendingKudos = this.db.prepare("SELECT COUNT(*) as count FROM pending_kudos").get() as {count: number};
+        const loraPresets = this.db.prepare("SELECT COUNT(*) as count FROM lora_presets").get() as {count: number};
         return {
             user_tokens: userTokens.count,
             parties: parties.count,
-            pending_kudos: pendingKudos.count
+            pending_kudos: pendingKudos.count,
+            lora_presets: loraPresets.count
         };
     }
 }
