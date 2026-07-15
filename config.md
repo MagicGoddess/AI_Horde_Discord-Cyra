@@ -91,7 +91,7 @@ Here you can see an explanation of what which option does
             "max_loras_per_preset": Maximum LoRAs in one preset (INTEGER; 1-25; DEFAULT: 5)
         },
         "replay_controls": {
-            "enabled": Show owner-only **Reroll** and, for personal presets, **Tweak & Generate** on completed `/advanced_generate` results (BOOLEAN; DEFAULT: true),
+            "enabled": Show collaborative **Reroll** and, for personal presets, **Tweak & Generate** controls on completed `/advanced_generate` results. Anyone with access to the result can use them; normal party-key, pressing-user-token, and bot-fallback billing precedence applies (BOOLEAN; DEFAULT: true),
             "retention_days": Days to retain database-backed replay setups before they expire (POSITIVE INTEGER; DEFAULT: 30)
         },
         "default": {

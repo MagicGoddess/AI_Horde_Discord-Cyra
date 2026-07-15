@@ -257,7 +257,7 @@ export interface DatabaseAdapter {
     getLoraPresetShare(id: string): Promise<LoraPresetShare | undefined>,
     deleteLoraPresetShare(id: string, creator_id: string): Promise<boolean>,
     saveAdvancedGenerationReplay(input: SaveAdvancedGenerationReplayInput): Promise<AdvancedGenerationReplay | undefined>,
-    getAdvancedGenerationReplay(id: string, owner_id: string): Promise<AdvancedGenerationReplay | undefined>,
+    getAdvancedGenerationReplay(id: string): Promise<AdvancedGenerationReplay | undefined>,
     deleteExpiredAdvancedGenerationReplays(cutoff?: Date): Promise<number>,
     getCounts(): Promise<DatabaseCounts>
 }

@@ -371,8 +371,8 @@ class PostgresAdapter implements DatabaseAdapter {
         return normalizeAdvancedGenerationReplay(result.rows[0]);
     }
 
-    async getAdvancedGenerationReplay(id: string, owner_id: string): Promise<AdvancedGenerationReplay | undefined> {
-        const result = await this.pool.query<RawAdvancedGenerationReplayRow>("SELECT * FROM advanced_generation_replays WHERE id=$1 AND owner_id=$2", [id, owner_id]);
+    async getAdvancedGenerationReplay(id: string): Promise<AdvancedGenerationReplay | undefined> {
+        const result = await this.pool.query<RawAdvancedGenerationReplayRow>("SELECT * FROM advanced_generation_replays WHERE id=$1", [id]);
         return normalizeAdvancedGenerationReplay(result.rows[0]);
     }
 
@@ -694,11 +694,11 @@ class SqliteAdapter implements DatabaseAdapter {
             input.preset ? JSON.stringify(input.preset) : null,
             input.has_source_image ? 1 : 0
         );
-        return this.getAdvancedGenerationReplay(input.id, input.owner_id);
+        return this.getAdvancedGenerationReplay(input.id);
     }
 
-    async getAdvancedGenerationReplay(id: string, owner_id: string): Promise<AdvancedGenerationReplay | undefined> {
-        const row = this.db.prepare("SELECT * FROM advanced_generation_replays WHERE id = ? AND owner_id = ?").get(id, owner_id) as RawAdvancedGenerationReplayRow | undefined;
+    async getAdvancedGenerationReplay(id: string): Promise<AdvancedGenerationReplay | undefined> {
+        const row = this.db.prepare("SELECT * FROM advanced_generation_replays WHERE id = ?").get(id) as RawAdvancedGenerationReplayRow | undefined;
         return normalizeAdvancedGenerationReplay(row);
     }
 

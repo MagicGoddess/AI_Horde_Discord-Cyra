@@ -400,7 +400,7 @@ export async function executeAdvancedGeneration(ctx: AdvancedGenerationContext, 
             if(ctx.client.config.advanced_generate?.lora_presets?.enabled === false) return ctx.error({error: "LoRA presets are disabled.", codeblock: false})
             if(!presetOverride && !ctx.database) return ctx.error({error: "The database is disabled. Persistent LoRA presets require a database.", codeblock: false})
             const requestedPresetId = lora_raw.slice("preset:".length)
-            if(presetOverride && (presetOverride.id !== requestedPresetId || presetOverride.owner_id !== ctx.interaction.user.id)) {
+            if(presetOverride && presetOverride.id !== requestedPresetId) {
                 return ctx.error({error: "The adjusted LoRA preset no longer matches this generation request.", codeblock: false})
             }
             const preset = presetOverride ?? await ctx.database!.getLoraPreset(requestedPresetId, ctx.interaction.user.id)

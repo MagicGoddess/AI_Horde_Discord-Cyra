@@ -19,8 +19,8 @@ export default class extends Component {
         const match = ctx.interaction.customId.match(/^advanced_replay_(reroll|tweak)_([0-9a-f-]{36})$/i);
         if(!match) return;
         const action = match[1]!;
-        const replay = await getAdvancedGenerationReplay(ctx.database, match[2]!, ctx.interaction.user.id);
-        if(!replay) return ctx.error({error: "This generation setup expired or does not belong to you. Run advanced_generate again.", codeblock: false});
+        const replay = await getAdvancedGenerationReplay(ctx.database, match[2]!);
+        if(!replay) return ctx.error({error: "This generation setup expired. Run advanced_generate again.", codeblock: false});
 
         const sourceImage = replay.has_source_image
             ? ctx.interaction.message.attachments.find(attachment => attachment.name === REPLAY_SOURCE_FILENAME) ?? null

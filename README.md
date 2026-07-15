@@ -31,7 +31,7 @@ A personal fork of ZeldaFan0225/AI_Horde_Discord, with added features.
 - Progressive generation previews: `/generate` and `/advanced_generate` now attach completed images to the same generation message as soon as each image is finished, instead of waiting for the full batch.
 - Generation timing: `/generate`, `/advanced_generate`, and remix now show how long a generation took when it completes successfully, and include elapsed time in system/API failure messages.
 - Failed generation summaries: `/generate` and `/advanced_generate` now keep a final failure embed with request details such as prompt, style, kudos consumed, elapsed time, and generation ID instead of dropping the embed entirely when the request faults or times out.
-- Completed `/advanced_generate` results include owner-only iteration controls.
+- Completed `/advanced_generate` results include collaborative iteration controls that anyone with access to the result can use. Replays follow normal billing precedence: a party shared key when present, then the pressing user's Horde token, then the configured bot fallback. Message deletion remains owner-only.
   - **Reroll** repeats the submitted options with a new random seed.
   - Results made with a personal LoRA preset also include **Tweak & Generate**, which reopens the strength editor with the same strengths and version-selection mode used. Pinned versions stay pinned, while **Always use latest** continues following the latest release. An explicitly submitted seed is retained for controlled comparisons.
   - Replay setups are retained for 30 days by default. Database-backed setups survive restarts; without a database, controls work until the process restarts.

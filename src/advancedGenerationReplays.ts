@@ -86,19 +86,18 @@ export async function saveAdvancedGenerationReplay(
 
 export async function getAdvancedGenerationReplay(
     database: DatabaseAdapter | undefined,
-    id: string,
-    ownerId: string
+    id: string
 ): Promise<AdvancedGenerationReplay | undefined> {
     let replay: AdvancedGenerationReplay | undefined;
     if(database) {
         try {
-            replay = await database.getAdvancedGenerationReplay(id, ownerId);
+            replay = await database.getAdvancedGenerationReplay(id);
         } catch(error) {
             console.error("Unable to load persisted advanced generation replay; checking memory fallback", error);
         }
     }
     replay ??= memoryReplays.get(id);
-    if(!replay || replay.owner_id !== ownerId) return undefined;
+    if(!replay) return undefined;
     if(replay.expires_at.getTime() <= Date.now()) {
         memoryReplays.delete(id);
         return undefined;
