@@ -423,8 +423,8 @@ export async function executeAdvancedGeneration(ctx: AdvancedGenerationContext, 
             ...(style?.loras ?? []).map(lora => `${lora.name} (${lora.model ?? 1})`),
             ...requested_lora_labels
         ]
-        const lora_label_text = lora_labels.join(", ")
-        const lora_summary = lora_labels.length ? `\n**LoRAs** ${lora_label_text}${selected_preset_name ? `\n**LoRA Preset** ${selected_preset_name}` : ""}` : ""
+        const lora_label_text = lora_labels.map(label => `- ${label}`).join("\n")
+        const lora_summary = lora_labels.length ? `\n**LoRAs**\n${lora_label_text}${selected_preset_name ? `\n**LoRA Preset** ${selected_preset_name}` : ""}` : ""
 
         if(party?.channel_id && !party.advanced_generate_allowed) return ctx.error({error: `You can only use ${await ctx.client.getSlashCommandTag("generate")} in parties unless advanced generation is enabled for that party`, codeblock: false})
         if(party?.style && requestedStyleRaw && party.style !== requestedStyleRaw.toLowerCase()) return ctx.error({error: `Please use the style '${party.style}' for this party`})
