@@ -86,7 +86,7 @@ Here you can see an explanation of what which option does
         "convert_a1111_weight_to_horde_weight": Whether to convert a1111 to weighted prompt required by the api (BOOLEAN) *7 *8,
         "improve_loading_time": Try to improve the displaying time between generation finished and generation displayed in discord (BOOLEAN) *7,
         "lora_presets": {
-            "enabled": Enable persistent personal LoRA presets, sharing, and the `/lora_preset` command (BOOLEAN),
+            "enabled": Enable persistent personal LoRA presets, version pinning, sharing, and the `/lora_preset` command (BOOLEAN),
             "max_presets_per_user": Maximum saved presets per Discord user (INTEGER; 1-25; DEFAULT: 25),
             "max_loras_per_preset": Maximum LoRAs in one preset (INTEGER; 1-25; DEFAULT: 5)
         },

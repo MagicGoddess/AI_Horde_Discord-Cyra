@@ -10,7 +10,7 @@ import { formatDuration } from "../formatDuration";
 const {buffer2webpbuffer} = require("webp-converter")
 import { appendFileSync } from "fs"
 import { ImageGenerationInput, ModelGenerationInputStableSamplers, ModelGenerationInputPostProcessingTypes } from "@zeldafan0225/ai_horde";
-import { getLoraStrengthValidationError, getLoraValidationError } from "../loraPresets";
+import { getLoraStrengthValidationError, getLoraValidationError, getLoraVersionIdValidationError, loraPresetItemToHordePayload } from "../loraPresets";
 import { AdvancedGenerateOptionsSnapshot, buildAdvancedGenerationStrengthModal, createAdvancedGenerationAdjustmentSession, snapshotAdvancedGenerateOptions } from "../advancedGenerationAdjustments";
 
 const config = JSON.parse(readFileSync("./config.json").toString()) as Config
@@ -343,6 +343,7 @@ function validatePresetForGeneration(ctx: AdvancedGenerationContext, preset: Lor
     const maxPresetLoras = ctx.client.config.advanced_generate?.lora_presets?.max_loras_per_preset ?? 5
     if(preset.items.length > maxPresetLoras) return `That preset exceeds the current limit of ${maxPresetLoras} LoRAs. Edit it before generating.`
     if(preset.items.some(item => getLoraStrengthValidationError(item.strength))) return "That preset contains a LoRA strength outside the supported -5 to 5 range. Edit it before generating."
+    if(preset.items.some(item => getLoraVersionIdValidationError(item.lora_version_id))) return "That preset contains an invalid LoRA version ID. Edit it before generating."
     if(!ctx.client.config.advanced_generate?.user_restrictions?.allow_nsfw && preset.items.some(item => item.nsfw)) return "That preset contains an NSFW LoRA, which is not allowed by this bot."
     return undefined
 }
@@ -386,7 +387,7 @@ export async function executeAdvancedGeneration(ctx: AdvancedGenerationContext, 
         const ai_horde_user = await ctx.ai_horde_manager.findUser({token: user_token  || ctx.client.config?.default_token || "0000000000"}).catch((e) => ctx.client.config.advanced?.dev ? console.error(e) : null);
         const can_bypass = ctx.client.config.advanced_generate?.source_image?.whitelist?.bypass_checks && ctx.client.config.advanced_generate?.source_image?.whitelist?.user_ids?.includes(ctx.interaction.user.id)
 
-        const requested_loras: {name: string, model?: number, clip?: number, inject_trigger?: string}[] = []
+        const requested_loras: {name: string, model?: number, clip?: number, inject_trigger?: string, is_version?: boolean}[] = []
         const requested_lora_labels: string[] = []
         let selected_preset_name: string | undefined
         if(lora_raw?.startsWith("preset:")) {
@@ -400,8 +401,8 @@ export async function executeAdvancedGeneration(ctx: AdvancedGenerationContext, 
             const validationError = validatePresetForGeneration(ctx, preset)
             if(validationError) return ctx.error({error: validationError, codeblock: false})
             selected_preset_name = preset!.name
-            requested_loras.push(...preset!.items.map(item => ({name: item.lora_id.toString(), model: item.strength, clip: item.strength, inject_trigger: "any"})))
-            requested_lora_labels.push(...preset!.items.map(item => `${item.lora_name} (${item.strength})`))
+            requested_loras.push(...preset!.items.map(loraPresetItemToHordePayload))
+            requested_lora_labels.push(...preset!.items.map(item => `${item.lora_name} [${item.lora_version_id ? item.lora_version_name ?? `version ${item.lora_version_id}` : "latest"}] (${item.strength})`))
         } else if(lora_raw) {
             const lora = await ctx.client.fetchLORAByID(lora_raw, advancedGenerateConfig.user_restrictions?.allow_nsfw).catch(error => {
                 if(ctx.client.config.advanced?.dev) console.error(error)

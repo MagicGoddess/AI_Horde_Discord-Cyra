@@ -7,7 +7,7 @@ import {
     StringSelectMenuBuilder
 } from "discord.js";
 import { AIHordeClient } from "./classes/client";
-import { LORAData, LoraPreset, LoraPresetItem } from "./types";
+import { LORAData, LoraPreset, LoraPresetItem, LORAVersionData } from "./types";
 
 export const LORA_PRESET_SESSION_TTL = 15 * 60 * 1000;
 
@@ -19,6 +19,11 @@ export interface LoraPresetEditorSession {
     items: Omit<LoraPresetItem, "position">[],
     selectedLoraId?: number,
     searchResults: LORAData[],
+    versionSelection?: {
+        lora: LORAData,
+        versions: LORAVersionData[],
+        page: number
+    },
     expiresAt: number
 }
 
@@ -85,12 +90,33 @@ export function getLoraStrengthValidationError(strength: number): string | undef
     return undefined;
 }
 
+export function getLoraVersionIdValidationError(versionId: number | undefined): string | undefined {
+    if(versionId !== undefined && (!Number.isInteger(versionId) || versionId <= 0)) return "Version IDs must be positive integers.";
+    return undefined;
+}
+
+export function loraPresetItemToHordePayload(item: Pick<LoraPresetItem, "lora_id" | "lora_version_id" | "strength">) {
+    return {
+        name: (item.lora_version_id ?? item.lora_id).toString(),
+        model: item.strength,
+        clip: item.strength,
+        inject_trigger: "any",
+        ...(item.lora_version_id === undefined ? {} : {is_version: true})
+    };
+}
+
 export function getLoraValidationError(client: AIHordeClient, lora: LORAData): string | undefined {
     if(lora.type !== "LORA" && lora.type !== "LoCon") return "The selected model is not a LoRA, LoCon, or LyCORIS";
-    const files = lora.modelVersions.flatMap(version => version.files ?? []);
-    const primary = files.find(file => file.primary) ?? files[0];
+    const latest = lora.modelVersions[0];
+    if(!latest) return "The selected LoRA does not have any available versions";
+    return getLoraVersionValidationError(client, lora, latest);
+}
+
+export function getLoraVersionValidationError(client: AIHordeClient, lora: LORAData, version: LORAVersionData): string | undefined {
+    if(lora.type !== "LORA" && lora.type !== "LoCon") return "The selected model is not a LoRA, LoCon, or LyCORIS";
+    const primary = version.files?.find(file => file.primary) ?? version.files?.[0];
     if(primary?.sizeKB && primary.sizeKB > 225280 && !client.horde_curated_loras.includes(lora.id)) {
-        return "The selected LoRA is larger than 220 MB and is not in Horde's curated list";
+        return "The selected LoRA version is larger than 220 MB and is not in Horde's curated list";
     }
     return undefined;
 }
@@ -113,9 +139,9 @@ export function renderLoraPresetEditor(session: LoraPresetEditorSession, maxLora
     const selected = session.selectedLoraId;
     const baseModels = new Set(session.items.map(item => item.base_model).filter(Boolean));
     const lines = session.items.length
-        ? session.items.map((item, index) => `${item.lora_id === selected ? "▶" : "•"} **${index + 1}. ${clamp(item.lora_name, 80)}** — ID \`${item.lora_id}\` — strength \`${item.strength}\`${item.base_model ? ` — ${clamp(item.base_model, 50)}` : ""}`)
+        ? session.items.map((item, index) => `${item.lora_id === selected ? "▶" : "•"} **${index + 1}. ${clamp(item.lora_name, 80)}** — ${item.lora_version_id ? `**${clamp(item.lora_version_name ?? `Version ${item.lora_version_id}`, 60)}** (\`${item.lora_version_id}\`)` : "**Latest (automatic)**"} — strength \`${item.strength}\`${item.base_model ? ` — ${clamp(item.base_model, 50)}` : ""}`)
         : ["No LoRAs added yet. Use **Find LoRA** to search CivitAI."];
-    if(baseModels.size > 1) lines.push("\n⚠️ This preset mixes base-model families and may not be fulfillable by Horde workers.");
+    if(baseModels.size > 1) lines.push("\n⚠️ This preset mixes recorded or pinned base-model families and may not be fulfillable by Horde workers.");
 
     const embed = new EmbedBuilder()
         .setTitle(`LoRA Preset: ${session.name}`)
@@ -130,7 +156,7 @@ export function renderLoraPresetEditor(session: LoraPresetEditorSession, maxLora
                 .setPlaceholder("Select a LoRA to edit")
                 .addOptions(session.items.map(item => ({
                     label: clamp(item.lora_name, 100),
-                    description: clamp(`ID ${item.lora_id} • strength ${item.strength}${item.base_model ? ` • ${item.base_model}` : ""}`, 100),
+                    description: clamp(`${item.lora_version_id ? item.lora_version_name ?? `Version ${item.lora_version_id}` : "Latest (automatic)"} • strength ${item.strength}${item.base_model ? ` • ${item.base_model}` : ""}`, 100),
                     value: item.lora_id.toString(),
                     default: item.lora_id === selected
                 })))
@@ -141,13 +167,48 @@ export function renderLoraPresetEditor(session: LoraPresetEditorSession, maxLora
         new ButtonBuilder().setCustomId(`lora_preset_find_${session.id}`).setLabel("Find LoRA").setStyle(ButtonStyle.Primary).setDisabled(session.items.length >= maxLoras),
         new ButtonBuilder().setCustomId(`lora_preset_strength_${session.id}`).setLabel("Set Strength").setStyle(ButtonStyle.Secondary).setDisabled(!selected),
         new ButtonBuilder().setCustomId(`lora_preset_remove_${session.id}`).setLabel("Remove").setStyle(ButtonStyle.Danger).setDisabled(!selected),
-        new ButtonBuilder().setCustomId(`lora_preset_rename_${session.id}`).setLabel("Rename").setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId(`lora_preset_rename_${session.id}`).setLabel("Rename").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`lora_preset_version_${session.id}`).setLabel("Version").setStyle(ButtonStyle.Secondary).setDisabled(!selected)
     ));
     components.push(new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder().setCustomId(`lora_preset_save_${session.id}`).setLabel("Save").setStyle(ButtonStyle.Success).setDisabled(!session.items.length),
         new ButtonBuilder().setCustomId(`lora_preset_cancel_${session.id}`).setLabel("Cancel").setStyle(ButtonStyle.Secondary)
     ));
 
+    return {embeds: [embed], components};
+}
+
+export function renderLoraVersionSelector(session: LoraPresetEditorSession) {
+    const selection = session.versionSelection;
+    if(!selection) throw new Error("No LoRA version selection is active");
+    const pageSize = 25;
+    const pageCount = Math.max(1, Math.ceil(selection.versions.length / pageSize));
+    selection.page = Math.max(0, Math.min(selection.page, pageCount - 1));
+    const versions = selection.versions.slice(selection.page * pageSize, (selection.page + 1) * pageSize);
+    const selected = session.items.find(item => item.lora_id === session.selectedLoraId);
+    const embed = new EmbedBuilder()
+        .setTitle(`Version: ${clamp(selection.lora.name, 230)}`)
+        .setDescription(`Currently using **${selected?.lora_version_id ? selected.lora_version_name ?? `Version ${selected.lora_version_id}` : "Latest (automatic)"}**. Choose an exact version to pin, or keep following the latest release.`)
+        .setFooter({text: `Page ${selection.page + 1}/${pageCount}`});
+    const components: ActionRowBuilder<any>[] = [
+        new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+            new StringSelectMenuBuilder()
+                .setCustomId(`lora_preset_versionselect_${session.id}`)
+                .setPlaceholder("Choose an exact LoRA version")
+                .addOptions(versions.map(version => ({
+                    label: clamp(`${version.baseModel || "Unknown base"} • ${version.name}`, 100),
+                    description: clamp(`Version ID ${version.id}${version.createdAt ? ` • ${version.createdAt.slice(0, 10)}` : ""}`, 100),
+                    value: version.id.toString(),
+                    default: version.id === selected?.lora_version_id
+                })))
+        ),
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder().setCustomId(`lora_preset_versionlatest_${session.id}`).setLabel("Always use latest").setStyle(ButtonStyle.Primary).setDisabled(!selected?.lora_version_id),
+            new ButtonBuilder().setCustomId(`lora_preset_versionprev_${session.id}`).setLabel("Previous").setStyle(ButtonStyle.Secondary).setDisabled(selection.page === 0),
+            new ButtonBuilder().setCustomId(`lora_preset_versionnext_${session.id}`).setLabel("Next").setStyle(ButtonStyle.Secondary).setDisabled(selection.page >= pageCount - 1),
+            new ButtonBuilder().setCustomId(`lora_preset_versionback_${session.id}`).setLabel("Back").setStyle(ButtonStyle.Secondary)
+        )
+    ];
     return {embeds: [embed], components};
 }
 

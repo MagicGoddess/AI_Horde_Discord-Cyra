@@ -130,7 +130,8 @@ export default class extends Command {
 
             const loraLines = share.items.map((item, index) => {
                 const loraName = item.lora_name.length <= 100 ? item.lora_name : `${item.lora_name.slice(0, 97)}...`;
-                return `${index + 1}. **${loraName}** — ID \`${item.lora_id}\` — strength \`${item.strength}\``;
+                const version = item.lora_version_id ? `${item.lora_version_name ?? "Pinned version"} (\`${item.lora_version_id}\`)` : "Latest (automatic)";
+                return `${index + 1}. **${loraName}** — model ID \`${item.lora_id}\` — ${version} — strength \`${item.strength}\`${item.base_model ? ` — ${item.base_model}` : ""}`;
             });
             const description = [
                 `Shared by **${ctx.interaction.user.displayName}**`,

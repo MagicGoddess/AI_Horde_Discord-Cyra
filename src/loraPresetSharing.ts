@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { DatabaseAdapter, LoraPreset, LoraPresetShare } from "./types";
-import { getLoraStrengthValidationError, normalizePresetName, validatePresetName } from "./loraPresets";
+import { getLoraStrengthValidationError, getLoraVersionIdValidationError, normalizePresetName, validatePresetName } from "./loraPresets";
 
 type PresetContents = Pick<LoraPreset | LoraPresetShare, "items">;
 
@@ -8,6 +8,7 @@ export function getSharedPresetValidationError(preset: PresetContents, maxLoras:
     if(!preset.items.length) return "This shared preset is empty.";
     if(preset.items.length > maxLoras) return `This shared preset contains more than the current limit of ${maxLoras} LoRAs.`;
     if(preset.items.some(item => getLoraStrengthValidationError(item.strength))) return "This shared preset contains an unsupported LoRA strength.";
+    if(preset.items.some(item => getLoraVersionIdValidationError(item.lora_version_id))) return "This shared preset contains an invalid LoRA version ID.";
     if(!allowNsfw && preset.items.some(item => item.nsfw)) return "This shared preset contains an NSFW LoRA, which is not allowed by this bot.";
     return undefined;
 }

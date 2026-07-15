@@ -112,6 +112,8 @@ export interface PendingKudosRecord {
 export interface LoraPresetItem {
     lora_id: number,
     lora_name: string,
+    lora_version_id?: number,
+    lora_version_name?: string,
     base_model?: string,
     nsfw: boolean,
     strength: number,
@@ -288,6 +290,8 @@ export interface LORAData {
         downloadUrl: string
     }[]
 }
+
+export type LORAVersionData = LORAData["modelVersions"][number]
 
 export interface HordeStyleData {
     prompt: string,

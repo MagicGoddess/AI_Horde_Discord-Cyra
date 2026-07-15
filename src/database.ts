@@ -36,18 +36,37 @@ type RawLoraPresetRow = Omit<LoraPreset, "created_at" | "updated_at" | "items"> 
     updated_at: string | Date
 }
 
-type RawLoraPresetItemRow = Omit<LoraPresetItem, "nsfw"> & {
+type RawLoraPresetItemRow = Omit<LoraPresetItem, "nsfw" | "lora_version_id" | "lora_version_name"> & {
     preset_id: string,
-    nsfw: boolean | number
+    nsfw: boolean | number,
+    lora_version_id?: number | null,
+    lora_version_name?: string | null
 }
 
 type RawLoraPresetShareRow = Omit<LoraPresetShare, "created_at" | "items"> & {
     created_at: string | Date
 }
 
-type RawLoraPresetShareItemRow = Omit<LoraPresetItem, "nsfw"> & {
+type RawLoraPresetShareItemRow = Omit<LoraPresetItem, "nsfw" | "lora_version_id" | "lora_version_name"> & {
     share_id: string,
-    nsfw: boolean | number
+    nsfw: boolean | number,
+    lora_version_id?: number | null,
+    lora_version_name?: string | null
+}
+
+type RawLoraItem = Omit<LoraPresetItem, "nsfw" | "lora_version_id" | "lora_version_name"> & {
+    nsfw: boolean | number,
+    lora_version_id?: number | null,
+    lora_version_name?: string | null
+}
+
+function normalizeLoraPresetItem(item: RawLoraItem): LoraPresetItem {
+    return {
+        ...item,
+        lora_version_id: item.lora_version_id ?? undefined,
+        lora_version_name: item.lora_version_name ?? undefined,
+        nsfw: typeof item.nsfw === "boolean" ? item.nsfw : !!item.nsfw
+    };
 }
 
 function normalizeParty(row: RawPartyRow | undefined): Party | undefined {
@@ -87,7 +106,7 @@ function normalizeLoraPreset(row: RawLoraPresetRow, items: RawLoraPresetItemRow[
         items: items
             .filter(item => item.preset_id === row.id)
             .sort((a, b) => a.position - b.position)
-            .map(({preset_id: _preset_id, ...item}) => ({...item, nsfw: typeof item.nsfw === "boolean" ? item.nsfw : !!item.nsfw}))
+            .map(({preset_id: _preset_id, ...item}) => normalizeLoraPresetItem(item))
     };
 }
 
@@ -98,7 +117,7 @@ function normalizeLoraPresetShare(row: RawLoraPresetShareRow, items: RawLoraPres
         items: items
             .filter(item => item.share_id === row.id)
             .sort((a, b) => a.position - b.position)
-            .map(({share_id: _share_id, ...item}) => ({...item, nsfw: typeof item.nsfw === "boolean" ? item.nsfw : !!item.nsfw}))
+            .map(({share_id: _share_id, ...item}) => normalizeLoraPresetItem(item))
     };
 }
 
@@ -130,9 +149,13 @@ class PostgresAdapter implements DatabaseAdapter {
         await this.pool.query("ALTER TABLE parties ADD COLUMN IF NOT EXISTS advanced_generate_allowed BOOLEAN NOT NULL DEFAULT false");
         await this.pool.query("CREATE TABLE IF NOT EXISTS pending_kudos (index SERIAL, unique_id VARCHAR(200) PRIMARY KEY, target_id VARCHAR(100) NOT NULL, from_id VARCHAR(100) NOT NULL, amount int NOT NULL, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)");
         await this.pool.query("CREATE TABLE IF NOT EXISTS lora_presets (id VARCHAR(36) PRIMARY KEY, owner_id VARCHAR(100) NOT NULL, name VARCHAR(50) NOT NULL, normalized_name VARCHAR(50) NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(owner_id, normalized_name))");
-        await this.pool.query("CREATE TABLE IF NOT EXISTS lora_preset_items (preset_id VARCHAR(36) NOT NULL REFERENCES lora_presets(id) ON DELETE CASCADE, position INT NOT NULL, lora_id INT NOT NULL, lora_name VARCHAR(255) NOT NULL, base_model VARCHAR(255), nsfw BOOLEAN NOT NULL DEFAULT false, strength REAL NOT NULL DEFAULT 1, PRIMARY KEY(preset_id, position), UNIQUE(preset_id, lora_id))");
+        await this.pool.query("CREATE TABLE IF NOT EXISTS lora_preset_items (preset_id VARCHAR(36) NOT NULL REFERENCES lora_presets(id) ON DELETE CASCADE, position INT NOT NULL, lora_id INT NOT NULL, lora_name VARCHAR(255) NOT NULL, lora_version_id INT, lora_version_name VARCHAR(255), base_model VARCHAR(255), nsfw BOOLEAN NOT NULL DEFAULT false, strength REAL NOT NULL DEFAULT 1, PRIMARY KEY(preset_id, position), UNIQUE(preset_id, lora_id))");
+        await this.pool.query("ALTER TABLE lora_preset_items ADD COLUMN IF NOT EXISTS lora_version_id INT");
+        await this.pool.query("ALTER TABLE lora_preset_items ADD COLUMN IF NOT EXISTS lora_version_name VARCHAR(255)");
         await this.pool.query("CREATE TABLE IF NOT EXISTS lora_preset_shares (id VARCHAR(36) PRIMARY KEY, creator_id VARCHAR(100) NOT NULL, name VARCHAR(50) NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)");
-        await this.pool.query("CREATE TABLE IF NOT EXISTS lora_preset_share_items (share_id VARCHAR(36) NOT NULL REFERENCES lora_preset_shares(id) ON DELETE CASCADE, position INT NOT NULL, lora_id INT NOT NULL, lora_name VARCHAR(255) NOT NULL, base_model VARCHAR(255), nsfw BOOLEAN NOT NULL DEFAULT false, strength REAL NOT NULL DEFAULT 1, PRIMARY KEY(share_id, position), UNIQUE(share_id, lora_id))");
+        await this.pool.query("CREATE TABLE IF NOT EXISTS lora_preset_share_items (share_id VARCHAR(36) NOT NULL REFERENCES lora_preset_shares(id) ON DELETE CASCADE, position INT NOT NULL, lora_id INT NOT NULL, lora_name VARCHAR(255) NOT NULL, lora_version_id INT, lora_version_name VARCHAR(255), base_model VARCHAR(255), nsfw BOOLEAN NOT NULL DEFAULT false, strength REAL NOT NULL DEFAULT 1, PRIMARY KEY(share_id, position), UNIQUE(share_id, lora_id))");
+        await this.pool.query("ALTER TABLE lora_preset_share_items ADD COLUMN IF NOT EXISTS lora_version_id INT");
+        await this.pool.query("ALTER TABLE lora_preset_share_items ADD COLUMN IF NOT EXISTS lora_version_name VARCHAR(255)");
     }
 
     async getUserToken(user_id: string): Promise<UserTokenRecord | undefined> {
@@ -253,8 +276,8 @@ class PostgresAdapter implements DatabaseAdapter {
             await client.query("DELETE FROM lora_preset_items WHERE preset_id=$1", [input.id]);
             for(const [position, item] of input.items.entries()) {
                 await client.query(
-                    "INSERT INTO lora_preset_items (preset_id, position, lora_id, lora_name, base_model, nsfw, strength) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-                    [input.id, position, item.lora_id, item.lora_name, item.base_model ?? null, item.nsfw, item.strength]
+                    "INSERT INTO lora_preset_items (preset_id, position, lora_id, lora_name, lora_version_id, lora_version_name, base_model, nsfw, strength) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+                    [input.id, position, item.lora_id, item.lora_name, item.lora_version_id ?? null, item.lora_version_name ?? null, item.base_model ?? null, item.nsfw, item.strength]
                 );
             }
             await client.query("COMMIT");
@@ -279,8 +302,8 @@ class PostgresAdapter implements DatabaseAdapter {
             await client.query("INSERT INTO lora_preset_shares (id, creator_id, name) VALUES ($1, $2, $3)", [input.id, input.creator_id, input.name]);
             for(const [position, item] of input.items.entries()) {
                 await client.query(
-                    "INSERT INTO lora_preset_share_items (share_id, position, lora_id, lora_name, base_model, nsfw, strength) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-                    [input.id, position, item.lora_id, item.lora_name, item.base_model ?? null, item.nsfw, item.strength]
+                    "INSERT INTO lora_preset_share_items (share_id, position, lora_id, lora_name, lora_version_id, lora_version_name, base_model, nsfw, strength) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+                    [input.id, position, item.lora_id, item.lora_name, item.lora_version_id ?? null, item.lora_version_name ?? null, item.base_model ?? null, item.nsfw, item.strength]
                 );
             }
             await client.query("COMMIT");
@@ -371,6 +394,8 @@ class SqliteAdapter implements DatabaseAdapter {
                 position INTEGER NOT NULL,
                 lora_id INTEGER NOT NULL,
                 lora_name TEXT NOT NULL,
+                lora_version_id INTEGER,
+                lora_version_name TEXT,
                 base_model TEXT,
                 nsfw INTEGER NOT NULL DEFAULT 0,
                 strength REAL NOT NULL DEFAULT 1,
@@ -388,6 +413,8 @@ class SqliteAdapter implements DatabaseAdapter {
                 position INTEGER NOT NULL,
                 lora_id INTEGER NOT NULL,
                 lora_name TEXT NOT NULL,
+                lora_version_id INTEGER,
+                lora_version_name TEXT,
                 base_model TEXT,
                 nsfw INTEGER NOT NULL DEFAULT 0,
                 strength REAL NOT NULL DEFAULT 1,
@@ -399,6 +426,11 @@ class SqliteAdapter implements DatabaseAdapter {
         const partyColumns = this.db.prepare("PRAGMA table_info(parties)").all() as {name: string}[];
         if(!partyColumns.some(column => column.name === "advanced_generate_allowed")) {
             this.db.prepare("ALTER TABLE parties ADD COLUMN advanced_generate_allowed INTEGER NOT NULL DEFAULT 0").run();
+        }
+        for(const table of ["lora_preset_items", "lora_preset_share_items"]) {
+            const columns = this.db.prepare(`PRAGMA table_info(${table})`).all() as {name: string}[];
+            if(!columns.some(column => column.name === "lora_version_id")) this.db.prepare(`ALTER TABLE ${table} ADD COLUMN lora_version_id INTEGER`).run();
+            if(!columns.some(column => column.name === "lora_version_name")) this.db.prepare(`ALTER TABLE ${table} ADD COLUMN lora_version_name TEXT`).run();
         }
     }
 
@@ -548,9 +580,9 @@ class SqliteAdapter implements DatabaseAdapter {
                 ON CONFLICT(id) DO UPDATE SET name = excluded.name, normalized_name = excluded.normalized_name, updated_at = excluded.updated_at
             `).run(input.id, input.owner_id, input.name, input.name.trim().toLowerCase(), new Date().toISOString());
             this.db.prepare("DELETE FROM lora_preset_items WHERE preset_id = ?").run(input.id);
-            const insert = this.db.prepare("INSERT INTO lora_preset_items (preset_id, position, lora_id, lora_name, base_model, nsfw, strength) VALUES (?, ?, ?, ?, ?, ?, ?)");
+            const insert = this.db.prepare("INSERT INTO lora_preset_items (preset_id, position, lora_id, lora_name, lora_version_id, lora_version_name, base_model, nsfw, strength) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
             for(const [position, item] of input.items.entries()) {
-                insert.run(input.id, position, item.lora_id, item.lora_name, item.base_model ?? null, item.nsfw ? 1 : 0, item.strength);
+                insert.run(input.id, position, item.lora_id, item.lora_name, item.lora_version_id ?? null, item.lora_version_name ?? null, item.base_model ?? null, item.nsfw ? 1 : 0, item.strength);
             }
         });
         save();
@@ -565,9 +597,9 @@ class SqliteAdapter implements DatabaseAdapter {
     async saveLoraPresetShare(input: SaveLoraPresetShareInput): Promise<LoraPresetShare | undefined> {
         const save = this.db.transaction(() => {
             this.db.prepare("INSERT INTO lora_preset_shares (id, creator_id, name) VALUES (?, ?, ?)").run(input.id, input.creator_id, input.name);
-            const insert = this.db.prepare("INSERT INTO lora_preset_share_items (share_id, position, lora_id, lora_name, base_model, nsfw, strength) VALUES (?, ?, ?, ?, ?, ?, ?)");
+            const insert = this.db.prepare("INSERT INTO lora_preset_share_items (share_id, position, lora_id, lora_name, lora_version_id, lora_version_name, base_model, nsfw, strength) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
             for(const [position, item] of input.items.entries()) {
-                insert.run(input.id, position, item.lora_id, item.lora_name, item.base_model ?? null, item.nsfw ? 1 : 0, item.strength);
+                insert.run(input.id, position, item.lora_id, item.lora_name, item.lora_version_id ?? null, item.lora_version_name ?? null, item.base_model ?? null, item.nsfw ? 1 : 0, item.strength);
             }
         });
         save();
