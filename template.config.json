@@ -108,6 +108,10 @@
             "max_presets_per_user": 25,
             "max_loras_per_preset": 5
         },
+        "replay_controls": {
+            "enabled": true,
+            "retention_days": 30
+        },
         "default": {
             "tiling": false,
             "steps": 30,

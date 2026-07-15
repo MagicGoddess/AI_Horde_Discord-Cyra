@@ -1,45 +1,15 @@
 import { randomUUID } from "crypto";
 import {
     ActionRowBuilder,
-    Attachment,
     ChatInputCommandInteraction,
     ModalBuilder,
     TextInputBuilder,
     TextInputStyle
 } from "discord.js";
-import { LoraPreset } from "./types";
+import { AdvancedGenerateOptionsSnapshot, LoraPreset } from "./types";
 import { getLoraStrengthValidationError } from "./loraPresets";
 
 const SESSION_TTL = 5 * 60 * 1000;
-
-export interface AdvancedGenerateOptionsSnapshot {
-    prompt: string,
-    sourceImage: Attachment | null,
-    keepOriginalRatio: boolean | null,
-    negativePrompt: string | null,
-    karras: boolean | null,
-    sampler: string | null,
-    cfg: number | null,
-    denoise: number | null,
-    seed: string | null,
-    height: number | null,
-    width: number | null,
-    useGfpgan: boolean | null,
-    useRealEsrgan: boolean | null,
-    seedVariation: number | null,
-    tiling: boolean | null,
-    steps: number | null,
-    amount: number | null,
-    style: string | null,
-    model: string | null,
-    shareResult: boolean | null,
-    lora: string | null,
-    textualInversion: string | null,
-    hiresFix: boolean | null,
-    qrCodeUrl: string | null,
-    clipSkip: number | null,
-    adjustLoraStrengths: boolean
-}
 
 export interface AdvancedGenerationAdjustmentSession {
     id: string,

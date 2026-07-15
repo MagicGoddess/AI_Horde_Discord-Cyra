@@ -90,6 +90,10 @@ Here you can see an explanation of what which option does
             "max_presets_per_user": Maximum saved presets per Discord user (INTEGER; 1-25; DEFAULT: 25),
             "max_loras_per_preset": Maximum LoRAs in one preset (INTEGER; 1-25; DEFAULT: 5)
         },
+        "replay_controls": {
+            "enabled": Show owner-only **Reroll** and, for personal presets, **Tweak & Generate** on completed `/advanced_generate` results (BOOLEAN; DEFAULT: true),
+            "retention_days": Days to retain database-backed replay setups before they expire (POSITIVE INTEGER; DEFAULT: 30)
+        },
         "default": {
             "tiling": Whether the result should be tileable if nothing is specified (BOOLEAN) *1,
             "steps": How many steps to go through by default if nothing is specified (INTEGER) *1,

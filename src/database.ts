@@ -2,7 +2,7 @@ import { existsSync, mkdirSync } from "fs";
 import path from "path";
 import Database from "better-sqlite3";
 import { Pool } from "pg";
-import { Config, CreatePartyInput, DatabaseAdapter, DatabaseCounts, LoraPreset, LoraPresetItem, LoraPresetShare, Party, PendingKudosRecord, SaveLoraPresetInput, SaveLoraPresetShareInput, UpdatePartyInput, UserTokenRecord } from "./types";
+import { AdvancedGenerationReplay, AdvancedGenerationReplayOptions, Config, CreatePartyInput, DatabaseAdapter, DatabaseCounts, LoraPreset, LoraPresetItem, LoraPresetShare, Party, PendingKudosRecord, SaveAdvancedGenerationReplayInput, SaveLoraPresetInput, SaveLoraPresetShareInput, UpdatePartyInput, UserTokenRecord } from "./types";
 
 type RawPartyRow = {
     index: number,
@@ -58,6 +58,16 @@ type RawLoraItem = Omit<LoraPresetItem, "nsfw" | "lora_version_id" | "lora_versi
     nsfw: boolean | number,
     lora_version_id?: number | null,
     lora_version_name?: string | null
+}
+
+type RawAdvancedGenerationReplayRow = {
+    id: string,
+    owner_id: string,
+    created_at: string | Date,
+    expires_at: string | Date,
+    options_json: string | AdvancedGenerationReplayOptions,
+    preset_json: string | LoraPreset | null,
+    has_source_image: boolean | number
 }
 
 function normalizeLoraPresetItem(item: RawLoraItem): LoraPresetItem {
@@ -121,6 +131,29 @@ function normalizeLoraPresetShare(row: RawLoraPresetShareRow, items: RawLoraPres
     };
 }
 
+function parseJsonValue<T>(value: string | T): T {
+    return typeof value === "string" ? JSON.parse(value) as T : value;
+}
+
+function normalizeAdvancedGenerationReplay(row: RawAdvancedGenerationReplayRow | undefined): AdvancedGenerationReplay | undefined {
+    if(!row) return undefined;
+    const preset = row.preset_json ? parseJsonValue<LoraPreset>(row.preset_json) : undefined;
+    return {
+        id: row.id,
+        owner_id: row.owner_id,
+        created_at: row.created_at instanceof Date ? row.created_at : new Date(row.created_at),
+        expires_at: row.expires_at instanceof Date ? row.expires_at : new Date(row.expires_at),
+        options: parseJsonValue<AdvancedGenerationReplayOptions>(row.options_json),
+        preset: preset ? {
+            ...preset,
+            created_at: new Date(preset.created_at),
+            updated_at: new Date(preset.updated_at),
+            items: preset.items.map(item => ({...item}))
+        } : undefined,
+        has_source_image: typeof row.has_source_image === "boolean" ? row.has_source_image : !!row.has_source_image
+    };
+}
+
 function parseStringArray(value: string | null | undefined): string[] {
     if(!value) return [];
     try {
@@ -156,6 +189,8 @@ class PostgresAdapter implements DatabaseAdapter {
         await this.pool.query("CREATE TABLE IF NOT EXISTS lora_preset_share_items (share_id VARCHAR(36) NOT NULL REFERENCES lora_preset_shares(id) ON DELETE CASCADE, position INT NOT NULL, lora_id INT NOT NULL, lora_name VARCHAR(255) NOT NULL, lora_version_id INT, lora_version_name VARCHAR(255), base_model VARCHAR(255), nsfw BOOLEAN NOT NULL DEFAULT false, strength REAL NOT NULL DEFAULT 1, PRIMARY KEY(share_id, position), UNIQUE(share_id, lora_id))");
         await this.pool.query("ALTER TABLE lora_preset_share_items ADD COLUMN IF NOT EXISTS lora_version_id INT");
         await this.pool.query("ALTER TABLE lora_preset_share_items ADD COLUMN IF NOT EXISTS lora_version_name VARCHAR(255)");
+        await this.pool.query("CREATE TABLE IF NOT EXISTS advanced_generation_replays (id VARCHAR(36) PRIMARY KEY, owner_id VARCHAR(100) NOT NULL, created_at TIMESTAMP NOT NULL, expires_at TIMESTAMP NOT NULL, options_json JSONB NOT NULL, preset_json JSONB, has_source_image BOOLEAN NOT NULL DEFAULT false)");
+        await this.pool.query("CREATE INDEX IF NOT EXISTS advanced_generation_replays_expires_at_idx ON advanced_generation_replays(expires_at)");
     }
 
     async getUserToken(user_id: string): Promise<UserTokenRecord | undefined> {
@@ -328,6 +363,24 @@ class PostgresAdapter implements DatabaseAdapter {
         return (result.rowCount || 0) > 0;
     }
 
+    async saveAdvancedGenerationReplay(input: SaveAdvancedGenerationReplayInput): Promise<AdvancedGenerationReplay | undefined> {
+        const result = await this.pool.query<RawAdvancedGenerationReplayRow>(
+            "INSERT INTO advanced_generation_replays (id, owner_id, created_at, expires_at, options_json, preset_json, has_source_image) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7) RETURNING *",
+            [input.id, input.owner_id, input.created_at, input.expires_at, JSON.stringify(input.options), input.preset ? JSON.stringify(input.preset) : null, input.has_source_image]
+        );
+        return normalizeAdvancedGenerationReplay(result.rows[0]);
+    }
+
+    async getAdvancedGenerationReplay(id: string, owner_id: string): Promise<AdvancedGenerationReplay | undefined> {
+        const result = await this.pool.query<RawAdvancedGenerationReplayRow>("SELECT * FROM advanced_generation_replays WHERE id=$1 AND owner_id=$2", [id, owner_id]);
+        return normalizeAdvancedGenerationReplay(result.rows[0]);
+    }
+
+    async deleteExpiredAdvancedGenerationReplays(cutoff: Date = new Date()): Promise<number> {
+        const result = await this.pool.query("DELETE FROM advanced_generation_replays WHERE expires_at <= $1", [cutoff]);
+        return result.rowCount || 0;
+    }
+
     async getCounts(): Promise<DatabaseCounts> {
         const result = await this.pool.query<DatabaseCounts>("SELECT (SELECT COUNT(*) FROM user_tokens) as user_tokens, (SELECT COUNT(*) FROM parties) as parties, (SELECT COUNT(*) FROM pending_kudos) as pending_kudos, (SELECT COUNT(*) FROM lora_presets) as lora_presets");
         return {
@@ -421,6 +474,16 @@ class SqliteAdapter implements DatabaseAdapter {
                 PRIMARY KEY(share_id, position),
                 UNIQUE(share_id, lora_id)
             );
+            CREATE TABLE IF NOT EXISTS advanced_generation_replays (
+                id TEXT PRIMARY KEY,
+                owner_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                options_json TEXT NOT NULL,
+                preset_json TEXT,
+                has_source_image INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS advanced_generation_replays_expires_at_idx ON advanced_generation_replays(expires_at);
         `);
         this.db.pragma("foreign_keys = ON");
         const partyColumns = this.db.prepare("PRAGMA table_info(parties)").all() as {name: string}[];
@@ -616,6 +679,32 @@ class SqliteAdapter implements DatabaseAdapter {
     async deleteLoraPresetShare(id: string, creator_id: string): Promise<boolean> {
         const result = this.db.prepare("DELETE FROM lora_preset_shares WHERE id = ? AND creator_id = ?").run(id, creator_id);
         return result.changes > 0;
+    }
+
+    async saveAdvancedGenerationReplay(input: SaveAdvancedGenerationReplayInput): Promise<AdvancedGenerationReplay | undefined> {
+        this.db.prepare(`
+            INSERT INTO advanced_generation_replays (id, owner_id, created_at, expires_at, options_json, preset_json, has_source_image)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(
+            input.id,
+            input.owner_id,
+            input.created_at.toISOString(),
+            input.expires_at.toISOString(),
+            JSON.stringify(input.options),
+            input.preset ? JSON.stringify(input.preset) : null,
+            input.has_source_image ? 1 : 0
+        );
+        return this.getAdvancedGenerationReplay(input.id, input.owner_id);
+    }
+
+    async getAdvancedGenerationReplay(id: string, owner_id: string): Promise<AdvancedGenerationReplay | undefined> {
+        const row = this.db.prepare("SELECT * FROM advanced_generation_replays WHERE id = ? AND owner_id = ?").get(id, owner_id) as RawAdvancedGenerationReplayRow | undefined;
+        return normalizeAdvancedGenerationReplay(row);
+    }
+
+    async deleteExpiredAdvancedGenerationReplays(cutoff: Date = new Date()): Promise<number> {
+        const result = this.db.prepare("DELETE FROM advanced_generation_replays WHERE expires_at <= ?").run(cutoff.toISOString());
+        return result.changes;
     }
 
     async getCounts(): Promise<DatabaseCounts> {

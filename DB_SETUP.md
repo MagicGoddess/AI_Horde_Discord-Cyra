@@ -42,12 +42,14 @@ to get logged into PSQL to start with do `sudo -i -u postgres psql`
 
 This setup guide was written by [thebwt](https://github.com/thebwt)
 
+The bot creates and migrates its tables automatically at startup. Advanced-generation replay settings are stored in `advanced_generation_replays` until their configured expiry and are cleaned up daily. These rows contain submitted generation options and immutable LoRA preset snapshots, but never Horde tokens or source-image bytes.
+
 # SQLite setup
 For SQLite, set `"database.type": "sqlite"` in `config.json`.
 
 - Optional: set `"database.sqlite.path"` if you do not want the default `./data/ai_horde.sqlite`
 - Leave the `DB_*` entries in `.env` empty
 - Start the bot normally; it will create the SQLite database file and schema automatically
-- Existing SQLite installs receive additive startup migrations automatically, including optional CivitAI version IDs and names on personal and shared LoRA preset items
+- Existing SQLite installs receive additive startup migrations automatically, including optional CivitAI version IDs and names on personal and shared LoRA preset items and the advanced-generation replay table
 
 SQLite support is intended for local, single-instance deployments.

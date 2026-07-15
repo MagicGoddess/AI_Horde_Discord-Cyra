@@ -1,6 +1,7 @@
 import {ModelGenerationInputStableSamplers, AIHorde, ModelPayloadTextInversionsStable} from "@zeldafan0225/ai_horde";
 import {
     AnySelectMenuInteraction,
+    Attachment,
     AutocompleteInteraction,
     ButtonInteraction,
     ChatInputCommandInteraction,
@@ -130,6 +131,57 @@ export interface LoraPreset {
     items: LoraPresetItem[]
 }
 
+export interface AdvancedGenerateOptionsSnapshot {
+    prompt: string,
+    sourceImage: Attachment | null,
+    keepOriginalRatio: boolean | null,
+    negativePrompt: string | null,
+    karras: boolean | null,
+    sampler: string | null,
+    cfg: number | null,
+    denoise: number | null,
+    seed: string | null,
+    height: number | null,
+    width: number | null,
+    useGfpgan: boolean | null,
+    useRealEsrgan: boolean | null,
+    seedVariation: number | null,
+    tiling: boolean | null,
+    steps: number | null,
+    amount: number | null,
+    style: string | null,
+    model: string | null,
+    shareResult: boolean | null,
+    lora: string | null,
+    textualInversion: string | null,
+    hiresFix: boolean | null,
+    qrCodeUrl: string | null,
+    clipSkip: number | null,
+    adjustLoraStrengths: boolean
+}
+
+export type AdvancedGenerationReplayOptions = Omit<AdvancedGenerateOptionsSnapshot, "sourceImage">;
+
+export interface AdvancedGenerationReplay {
+    id: string,
+    owner_id: string,
+    created_at: Date,
+    expires_at: Date,
+    options: AdvancedGenerationReplayOptions,
+    preset?: LoraPreset,
+    has_source_image: boolean
+}
+
+export interface SaveAdvancedGenerationReplayInput {
+    id: string,
+    owner_id: string,
+    created_at: Date,
+    expires_at: Date,
+    options: AdvancedGenerationReplayOptions,
+    preset?: LoraPreset,
+    has_source_image: boolean
+}
+
 export interface SaveLoraPresetInput {
     id: string,
     owner_id: string,
@@ -204,6 +256,9 @@ export interface DatabaseAdapter {
     saveLoraPresetShare(input: SaveLoraPresetShareInput): Promise<LoraPresetShare | undefined>,
     getLoraPresetShare(id: string): Promise<LoraPresetShare | undefined>,
     deleteLoraPresetShare(id: string, creator_id: string): Promise<boolean>,
+    saveAdvancedGenerationReplay(input: SaveAdvancedGenerationReplayInput): Promise<AdvancedGenerationReplay | undefined>,
+    getAdvancedGenerationReplay(id: string, owner_id: string): Promise<AdvancedGenerationReplay | undefined>,
+    deleteExpiredAdvancedGenerationReplays(cutoff?: Date): Promise<number>,
     getCounts(): Promise<DatabaseCounts>
 }
 
@@ -412,6 +467,10 @@ export interface Config {
             enabled?: boolean,
             max_presets_per_user?: number,
             max_loras_per_preset?: number
+        },
+        replay_controls?: {
+            enabled?: boolean,
+            retention_days?: number
         },
         default?: {
             tiling?: boolean,

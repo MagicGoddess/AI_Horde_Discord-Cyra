@@ -1,8 +1,9 @@
-import { ActionRowData, AttachmentBuilder, ButtonBuilder, ChannelType, Colors, EmbedBuilder, InteractionButtonComponentData, SlashCommandAttachmentOption, SlashCommandBooleanOption, SlashCommandBuilder, SlashCommandIntegerOption, SlashCommandStringOption } from "discord.js";
+import { ActionRowData, AttachmentBuilder, ButtonBuilder, ChannelType, Colors, ComponentType, EmbedBuilder, InteractionButtonComponentData, SlashCommandAttachmentOption, SlashCommandBooleanOption, SlashCommandBuilder, SlashCommandIntegerOption, SlashCommandStringOption } from "discord.js";
 import { Command } from "../classes/command";
 import { CommandContext } from "../classes/commandContext";
 import { ModalContext } from "../classes/modalContext";
-import { Config, HordeStyleData, LoraPreset } from "../types";
+import { AdvancedGenerateOptionsSnapshot, Config, HordeStyleData, LoraPreset } from "../types";
+import { ComponentContext } from "../classes/componentContext";
 import {readFileSync} from "fs"
 import { AutocompleteContext } from "../classes/autocompleteContext";
 import Centra from "centra";
@@ -11,7 +12,8 @@ const {buffer2webpbuffer} = require("webp-converter")
 import { appendFileSync } from "fs"
 import { ImageGenerationInput, ModelGenerationInputStableSamplers, ModelGenerationInputPostProcessingTypes } from "@zeldafan0225/ai_horde";
 import { getLatestLoraValidationError, getLoraStrengthValidationError, getLoraVersionIdValidationError, loraPresetItemToHordePayload } from "../loraPresets";
-import { AdvancedGenerateOptionsSnapshot, buildAdvancedGenerationStrengthModal, createAdvancedGenerationAdjustmentSession, snapshotAdvancedGenerateOptions } from "../advancedGenerationAdjustments";
+import { buildAdvancedGenerationStrengthModal, createAdvancedGenerationAdjustmentSession, snapshotAdvancedGenerateOptions } from "../advancedGenerationAdjustments";
+import { REPLAY_SOURCE_FILENAME, saveAdvancedGenerationReplay } from "../advancedGenerationReplays";
 
 const config = JSON.parse(readFileSync("./config.json").toString()) as Config
 const MAX_EMBED_DESCRIPTION_LENGTH = 4096
@@ -335,7 +337,7 @@ export default class extends Command {
     }
 }
 
-type AdvancedGenerationContext = CommandContext | ModalContext
+type AdvancedGenerationContext = CommandContext | ModalContext | ComponentContext<ComponentType.Button>
 
 function validatePresetForGeneration(ctx: AdvancedGenerationContext, preset: LoraPreset | undefined) {
     if(!preset) return "That LoRA preset was not found or does not belong to you."
@@ -390,17 +392,19 @@ export async function executeAdvancedGeneration(ctx: AdvancedGenerationContext, 
         const requested_loras: {name: string, model?: number, clip?: number, inject_trigger?: string, is_version?: boolean}[] = []
         const requested_lora_labels: string[] = []
         let selected_preset_name: string | undefined
+        let selected_preset_snapshot: LoraPreset | undefined
         if(lora_raw?.startsWith("preset:")) {
             if(ctx.client.config.advanced_generate?.lora_presets?.enabled === false) return ctx.error({error: "LoRA presets are disabled.", codeblock: false})
-            if(!ctx.database) return ctx.error({error: "The database is disabled. Persistent LoRA presets require a database.", codeblock: false})
+            if(!presetOverride && !ctx.database) return ctx.error({error: "The database is disabled. Persistent LoRA presets require a database.", codeblock: false})
             const requestedPresetId = lora_raw.slice("preset:".length)
             if(presetOverride && (presetOverride.id !== requestedPresetId || presetOverride.owner_id !== ctx.interaction.user.id)) {
                 return ctx.error({error: "The adjusted LoRA preset no longer matches this generation request.", codeblock: false})
             }
-            const preset = presetOverride ?? await ctx.database.getLoraPreset(requestedPresetId, ctx.interaction.user.id)
+            const preset = presetOverride ?? await ctx.database!.getLoraPreset(requestedPresetId, ctx.interaction.user.id)
             const validationError = validatePresetForGeneration(ctx, preset)
             if(validationError) return ctx.error({error: validationError, codeblock: false})
             selected_preset_name = preset!.name
+            selected_preset_snapshot = preset!
             requested_loras.push(...preset!.items.map(loraPresetItemToHordePayload))
             requested_lora_labels.push(...preset!.items.map(item => `${item.lora_name} [${item.lora_version_id ? item.lora_version_name ?? `version ${item.lora_version_id}` : "latest"}] (${item.strength})`))
         } else if(lora_raw) {
@@ -617,6 +621,37 @@ ETA: <t:${Math.floor(Date.now()/1000)+(start_status?.wait_time ?? 0)}:R>`], [lor
             style: 4,
             type: 2
         }
+        async function buildFinishedComponents(
+            ratingRows: ActionRowData<InteractionButtonComponentData>[],
+            sourceRetained: boolean
+        ): Promise<ActionRowData<InteractionButtonComponentData>[]> {
+            const replayEnabled = ctx.client.config.advanced_generate?.replay_controls?.enabled !== false
+            if(!replayEnabled || (img_data && !sourceRetained)) {
+                return [...ratingRows, {type: 1, components: [delete_btn]}]
+            }
+
+            const replay = await saveAdvancedGenerationReplay(
+                ctx.database,
+                ctx.client.config,
+                ctx.interaction.user.id,
+                options,
+                selected_preset_snapshot
+            )
+            const actions: InteractionButtonComponentData[] = [{
+                type: 2,
+                label: "Reroll",
+                customId: `advanced_replay_reroll_${replay.id}`,
+                style: 1
+            }]
+            if(selected_preset_snapshot) actions.push({
+                type: 2,
+                label: "Tweak & Generate",
+                customId: `advanced_replay_tweak_${replay.id}`,
+                style: 2
+            })
+            actions.push(delete_btn)
+            return [...ratingRows, {type: 1, components: actions}]
+        }
         const components = [{type: 1,components: [btn.toJSON()]}]
 
         ctx.interaction.editReply({
@@ -780,24 +815,27 @@ ETA: <t:${Math.floor(Date.now()/1000)+(status?.wait_time ?? 0)}:R>`
 
                     const image_map = await Promise.all(image_map_r)
                     const files = image_map.filter(i => i.attachment).map(i => i.attachment) as  AttachmentBuilder[]
-                    if(img_data && image_map.length < 10) files.push(new AttachmentBuilder(img_data, {name: "original.webp"}))
-                    let components = [{type: 1, components: [delete_btn]}]
+                    const sourceRetained = !!img_data && files.length < 10
+                    if(sourceRetained) files.push(new AttachmentBuilder(img_data!, {name: REPLAY_SOURCE_FILENAME}))
+                    const replayUnavailable = !!img_data && !sourceRetained && ctx.client.config.advanced_generate?.replay_controls?.enabled !== false
                     const embeds = [
                         new EmbedBuilder({
                             title: "Generation Finished",
                             description: buildLimitedDescription(
-                                ["**Prompt** ", `\n**Style** ${style_raw}`, `\n**Kudos Consumed** \`${images.kudos}\`\n**Time Taken** \`${getElapsedGenerationTime()}\`${image_map.length !== amount ? "\nCensored Images are not displayed" : ""}`],
+                                ["**Prompt** ", `\n**Style** ${style_raw}`, `\n**Kudos Consumed** \`${images.kudos}\`\n**Time Taken** \`${getElapsedGenerationTime()}\`${image_map.length !== amount ? "\nCensored Images are not displayed" : ""}${replayUnavailable ? "\nReplay controls are unavailable because Discord's attachment limit prevented retaining the source image." : ""}`],
                                 [prompt, lora_summary]
                             ),
                             color: Colors.Blue,
                             footer: {text: `Generation ID ${generation_start!.id}`},
-                            thumbnail: img_data && image_map.length < 10 ? {url: "attachment://original.webp"} : img_data ? {url: img!.url} : undefined
+                            thumbnail: sourceRetained ? {url: `attachment://${REPLAY_SOURCE_FILENAME}`} : img_data ? {url: img!.url} : undefined
                         })
                     ]
 
+                    let ratingRows: ActionRowData<InteractionButtonComponentData>[] = []
                     if(ctx.client.config.advanced_generate?.user_restrictions?.allow_rating && (generation_data.shared ?? true) && files.length === 1) {
-                        components = [...generateButtons(generation_start!.id!), ...components]
+                        ratingRows = generateButtons(generation_start!.id!)
                     }
+                    const components = await buildFinishedComponents(ratingRows, sourceRetained)
                     await message.edit({content: null, components, embeds, files});
                     return null
                 }
@@ -818,7 +856,6 @@ ETA: <t:${Math.floor(Date.now()/1000)+(status?.wait_time ?? 0)}:R>`
                         color: Colors.Blue,
                         description,
                     })
-                    if(img_data) embed.setThumbnail(`attachment://original.webp`)
                     return {attachment, embed}
                 }) || []
                 if(!precheck) clearInterval(inter)
@@ -827,12 +864,18 @@ ETA: <t:${Math.floor(Date.now()/1000)+(status?.wait_time ?? 0)}:R>`
                 const embeds = image_map.map(i => i.embed)
                 if(ctx.client.config.advanced?.dev) embeds.at(-1)?.setFooter({text: `Generation ID ${generation_start!.id}`})
                 const files = image_map.map(i => i.attachment)
-                if(img_data) files.push(new AttachmentBuilder(img_data, {name: "original.webp"}))
-                let components = [{type: 1, components: [delete_btn]}]
+                const sourceRetained = !!img_data && files.length < 10
+                if(sourceRetained) {
+                    files.push(new AttachmentBuilder(img_data!, {name: REPLAY_SOURCE_FILENAME}))
+                    embeds.forEach(embed => embed.setThumbnail(`attachment://${REPLAY_SOURCE_FILENAME}`))
+                } else if(img_data) embeds.forEach(embed => embed.setThumbnail(img!.url))
+                let ratingRows: ActionRowData<InteractionButtonComponentData>[] = []
                 if(ctx.client.config.advanced_generate?.user_restrictions?.allow_rating && (generation_data.shared ?? true) && files.length === 1) {
-                    components = [...generateButtons(generation_start!.id!), ...components]
+                    ratingRows = generateButtons(generation_start!.id!)
                 }
-                await message.edit({content: `Image generation finished in ${getElapsedGenerationTime()}\n\n**A new view is available, check it out by enabling \`result_structure_v2_enabled\` in the bots config**`, components, embeds, files}).catch(console.error);
+                const components = await buildFinishedComponents(ratingRows, sourceRetained)
+                const replayUnavailable = !!img_data && !sourceRetained && ctx.client.config.advanced_generate?.replay_controls?.enabled !== false
+                await message.edit({content: `Image generation finished in ${getElapsedGenerationTime()}\n\n**A new view is available, check it out by enabling \`result_structure_v2_enabled\` in the bots config**${replayUnavailable ? "\n\nReplay controls are unavailable because Discord's attachment limit prevented retaining the source image." : ""}`, components, embeds, files}).catch(console.error);
                 return null
             } 
         }
