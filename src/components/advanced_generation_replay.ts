@@ -1,6 +1,7 @@
 import { ComponentType } from "discord.js";
 import { buildAdvancedGenerationStrengthModal, createAdvancedGenerationAdjustmentSession } from "../advancedGenerationAdjustments";
 import { getAdvancedGenerationReplay, hydrateReplayOptions, REPLAY_SOURCE_FILENAME } from "../advancedGenerationReplays";
+import { getAdvancedGenerationRestrictionError } from "../advancedGenerationRestrictions";
 import { Component } from "../classes/component";
 import { ComponentContext } from "../classes/componentContext";
 import { executeAdvancedGeneration } from "../commands/advanced_generate";
@@ -29,13 +30,15 @@ export default class extends Component {
         }
 
         const options = hydrateReplayOptions(replay, sourceImage);
+        if(action === "reroll") options.seed = null;
+        const restrictionError = getAdvancedGenerationRestrictionError(ctx.client.config, options);
+        if(restrictionError) return ctx.error({error: restrictionError, codeblock: false});
         if(action === "tweak") {
             if(!replay.preset) return ctx.error({error: "This generation did not use a personal LoRA preset.", codeblock: false});
             const session = createAdvancedGenerationAdjustmentSession(ctx.interaction.user.id, options, replay.preset);
             return ctx.interaction.showModal(buildAdvancedGenerationStrengthModal(session));
         }
 
-        options.seed = null;
         await ctx.interaction.deferReply({});
         return executeAdvancedGeneration(ctx, options, replay.preset);
     }

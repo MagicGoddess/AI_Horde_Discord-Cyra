@@ -14,6 +14,7 @@ import { ImageGenerationInput, ModelGenerationInputStableSamplers, ModelGenerati
 import { getLatestLoraValidationError, getLoraStrengthValidationError, getLoraVersionIdValidationError, loraPresetItemToHordePayload } from "../loraPresets";
 import { buildAdvancedGenerationStrengthModal, createAdvancedGenerationAdjustmentSession, snapshotAdvancedGenerateOptions } from "../advancedGenerationAdjustments";
 import { REPLAY_SOURCE_FILENAME, saveAdvancedGenerationReplay } from "../advancedGenerationReplays";
+import { getAdvancedGenerationRestrictionError } from "../advancedGenerationRestrictions";
 
 const config = JSON.parse(readFileSync("./config.json").toString()) as Config
 const MAX_EMBED_DESCRIPTION_LENGTH = 4096
@@ -351,6 +352,8 @@ function validatePresetForGeneration(ctx: AdvancedGenerationContext, preset: Lor
 }
 
 export async function executeAdvancedGeneration(ctx: AdvancedGenerationContext, options: AdvancedGenerateOptionsSnapshot, presetOverride?: LoraPreset): Promise<any> {
+        const restrictionError = getAdvancedGenerationRestrictionError(ctx.client.config, options)
+        if(restrictionError) return ctx.error({error: restrictionError, codeblock: false})
         const advancedGenerateConfig = ctx.client.config.advanced_generate!
         let prompt = options.prompt
         const party = await ctx.client.getParty(ctx.interaction.channelId!, ctx.database)
