@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- let LoRA presets follow the latest CivitAI release by default or explicitly pin an exact version and base model
+- let LoRA presets follow the latest CivitAI release by default or explicitly pin an exact eligible version and base model, including when only an older release is Horde-compatible
 - add durable, immutable `/lora_preset share` snapshots that other users can copy into their personal presets
 - allow `/advanced_generate` to temporarily override every LoRA strength in a selected personal preset without changing the saved preset
 - support Horde LoRA strengths from -5 to 5 and report configurations that exceed Discord's 25 slash-command option limit

@@ -22,7 +22,8 @@ export interface LoraPresetEditorSession {
     versionSelection?: {
         lora: LORAData,
         versions: LORAVersionData[],
-        page: number
+        page: number,
+        pendingAdd?: boolean
     },
     expiresAt: number
 }
@@ -107,6 +108,13 @@ export function loraPresetItemToHordePayload(item: Pick<LoraPresetItem, "lora_id
 
 export function getLoraValidationError(client: AIHordeClient, lora: LORAData): string | undefined {
     if(lora.type !== "LORA" && lora.type !== "LoCon") return "The selected model is not a LoRA, LoCon, or LyCORIS";
+    if(!lora.modelVersions.length) return "The selected LoRA does not have any available versions";
+    if(lora.modelVersions.some(version => !getLoraVersionValidationError(client, lora, version))) return undefined;
+    return "The selected LoRA does not have any versions eligible for use with Horde";
+}
+
+export function getLatestLoraValidationError(client: AIHordeClient, lora: LORAData): string | undefined {
+    if(lora.type !== "LORA" && lora.type !== "LoCon") return "The selected model is not a LoRA, LoCon, or LyCORIS";
     const latest = lora.modelVersions[0];
     if(!latest) return "The selected LoRA does not have any available versions";
     return getLoraVersionValidationError(client, lora, latest);
@@ -185,10 +193,13 @@ export function renderLoraVersionSelector(session: LoraPresetEditorSession) {
     const pageCount = Math.max(1, Math.ceil(selection.versions.length / pageSize));
     selection.page = Math.max(0, Math.min(selection.page, pageCount - 1));
     const versions = selection.versions.slice(selection.page * pageSize, (selection.page + 1) * pageSize);
-    const selected = session.items.find(item => item.lora_id === session.selectedLoraId);
+    const selected = selection.pendingAdd ? undefined : session.items.find(item => item.lora_id === session.selectedLoraId);
+    const latestEligible = selection.versions.some(version => version.id === selection.lora.modelVersions[0]?.id);
     const embed = new EmbedBuilder()
         .setTitle(`Version: ${clamp(selection.lora.name, 230)}`)
-        .setDescription(`Currently using **${selected?.lora_version_id ? selected.lora_version_name ?? `Version ${selected.lora_version_id}` : "Latest (automatic)"}**. Choose an exact version to pin, or keep following the latest release.`)
+        .setDescription(selection.pendingAdd
+            ? "The latest release is not eligible for use with Horde. Choose an eligible exact version to add this LoRA."
+            : `Currently using **${selected?.lora_version_id ? selected.lora_version_name ?? `Version ${selected.lora_version_id}` : "Latest (automatic)"}**. Choose an exact version to pin, or keep following the latest release.`)
         .setFooter({text: `Page ${selection.page + 1}/${pageCount}`});
     const components: ActionRowBuilder<any>[] = [
         new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
@@ -203,10 +214,10 @@ export function renderLoraVersionSelector(session: LoraPresetEditorSession) {
                 })))
         ),
         new ActionRowBuilder<ButtonBuilder>().addComponents(
-            new ButtonBuilder().setCustomId(`lora_preset_versionlatest_${session.id}`).setLabel("Always use latest").setStyle(ButtonStyle.Primary).setDisabled(!selected?.lora_version_id),
+            new ButtonBuilder().setCustomId(`lora_preset_versionlatest_${session.id}`).setLabel("Always use latest").setStyle(ButtonStyle.Primary).setDisabled(!!selection.pendingAdd || !selected?.lora_version_id || !latestEligible),
             new ButtonBuilder().setCustomId(`lora_preset_versionprev_${session.id}`).setLabel("Previous").setStyle(ButtonStyle.Secondary).setDisabled(selection.page === 0),
             new ButtonBuilder().setCustomId(`lora_preset_versionnext_${session.id}`).setLabel("Next").setStyle(ButtonStyle.Secondary).setDisabled(selection.page >= pageCount - 1),
-            new ButtonBuilder().setCustomId(`lora_preset_versionback_${session.id}`).setLabel("Back").setStyle(ButtonStyle.Secondary)
+            new ButtonBuilder().setCustomId(`lora_preset_versionback_${session.id}`).setLabel(selection.pendingAdd ? "Back to results" : "Back").setStyle(ButtonStyle.Secondary)
         )
     ];
     return {embeds: [embed], components};

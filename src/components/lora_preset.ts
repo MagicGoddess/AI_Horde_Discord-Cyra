@@ -15,6 +15,7 @@ import {
     getLoraVersionValidationError,
     loraDataToPresetItem,
     renderLoraPresetEditor,
+    renderLoraSearchResults,
     renderLoraVersionSelector
 } from "../loraPresets";
 
@@ -122,12 +123,21 @@ export default class extends Component {
 
         if(action === "versionselect") {
             if(!ctx.interaction.isStringSelectMenu()) return;
-            const selected = session.items.find(item => item.lora_id === session.selectedLoraId);
             const selection = session.versionSelection;
-            if(!selected || !selection) return ctx.error({error: "This version selector expired. Return to the preset editor and try again.", codeblock: false});
+            if(!selection) return ctx.error({error: "This version selector expired. Return to the preset editor and try again.", codeblock: false});
             const versionId = Number(ctx.interaction.values[0]);
             const version = selection.versions.find(candidate => candidate.id === versionId);
             if(!version) return ctx.error({error: "That LoRA version is no longer available in this selector.", codeblock: false});
+            let selected = session.items.find(item => item.lora_id === session.selectedLoraId);
+            if(selection.pendingAdd) {
+                if(session.items.length >= maxLoras) return ctx.error({error: `This preset already has the maximum of ${maxLoras} LoRAs.`, codeblock: false});
+                if(session.items.some(item => item.lora_id === selection.lora.id)) return ctx.error({error: "That LoRA is already in this preset.", codeblock: false});
+                selected = loraDataToPresetItem(selection.lora);
+                session.items.push(selected);
+                session.selectedLoraId = selection.lora.id;
+                session.searchResults = [];
+            }
+            if(!selected) return ctx.error({error: "The selected LoRA is no longer in this preset.", codeblock: false});
             selected.lora_name = selection.lora.name;
             selected.lora_version_id = version.id;
             selected.lora_version_name = version.name;
@@ -141,7 +151,7 @@ export default class extends Component {
             if(!ctx.interaction.isButton()) return;
             const selected = session.items.find(item => item.lora_id === session.selectedLoraId);
             const selection = session.versionSelection;
-            if(!selected || !selection) return ctx.error({error: "This version selector expired. Return to the preset editor and try again.", codeblock: false});
+            if(!selected || !selection || selection.pendingAdd) return ctx.error({error: "This version selector expired. Return to the preset editor and try again.", codeblock: false});
             const latest = selection.lora.modelVersions[0];
             if(!latest || getLoraVersionValidationError(ctx.client, selection.lora, latest)) {
                 return ctx.error({error: "The latest version of this LoRA is not eligible for use with Horde.", codeblock: false});
@@ -164,8 +174,9 @@ export default class extends Component {
 
         if(action === "versionback") {
             if(!ctx.interaction.isButton()) return;
+            const returnToResults = !!session.versionSelection?.pendingAdd;
             session.versionSelection = undefined;
-            return ctx.interaction.update(renderLoraPresetEditor(session, maxLoras));
+            return ctx.interaction.update(returnToResults ? renderLoraSearchResults(session) : renderLoraPresetEditor(session, maxLoras));
         }
 
         if(action === "result") {
@@ -175,6 +186,13 @@ export default class extends Component {
             if(session.items.some(item => item.lora_id === loraId)) return ctx.error({error: "That LoRA is already in this preset.", codeblock: false});
             const lora = session.searchResults.find(result => result.id === loraId);
             if(!lora) return ctx.error({error: "That search result expired. Search again.", codeblock: false});
+            const latest = lora.modelVersions[0];
+            if(!latest || getLoraVersionValidationError(ctx.client, lora, latest)) {
+                const versions = lora.modelVersions.filter(version => !getLoraVersionValidationError(ctx.client, lora, version));
+                if(!versions.length) return ctx.error({error: "This LoRA no longer has any versions eligible for use with Horde.", codeblock: false});
+                session.versionSelection = {lora, versions, page: 0, pendingAdd: true};
+                return ctx.interaction.update(renderLoraVersionSelector(session));
+            }
             session.items.push(loraDataToPresetItem(lora));
             session.selectedLoraId = lora.id;
             session.searchResults = [];

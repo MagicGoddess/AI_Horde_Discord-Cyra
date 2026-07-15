@@ -35,7 +35,7 @@ A personal fork of ZeldaFan0225/AI_Horde_Discord, with added features.
   - Use `/lora_preset create`, `edit`, `list`, and `delete` to manage private presets through an ephemeral editor.
   - `/lora_preset share` posts an immutable preset snapshot with a button other users can use to copy it into their own presets. The sharer can delete the shared message.
   - Each LoRA has one strength from -5 to 5 applied to both model and CLIP, and Horde automatically injects an available trigger word.
-  - New LoRAs follow the latest CivitAI version automatically. Use **Version** in the preset editor to pin a specific version (including its base model), or switch it back to **Always use latest** later.
+  - New LoRAs follow the latest CivitAI version automatically. Use **Version** in the preset editor to pin a specific version (including its base model), or switch it back to **Always use latest** later. If the latest release is not Horde-eligible but an older release is, the editor requires an eligible exact version when adding it.
   - Pinned version choices are retained when temporarily adjusting strengths and when sharing or copying a preset. Mixed base-model families show a warning but can still be saved.
   - In `/advanced_generate`, set `adjust_lora_strengths` when selecting a preset to temporarily change its strengths for that generation without creating or modifying a preset.
   - Presets with up to five LoRAs use one modal field per LoRA; larger configured presets use `CivitAI_ID=strength` lines in one field.

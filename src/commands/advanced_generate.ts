@@ -10,7 +10,7 @@ import { formatDuration } from "../formatDuration";
 const {buffer2webpbuffer} = require("webp-converter")
 import { appendFileSync } from "fs"
 import { ImageGenerationInput, ModelGenerationInputStableSamplers, ModelGenerationInputPostProcessingTypes } from "@zeldafan0225/ai_horde";
-import { getLoraStrengthValidationError, getLoraValidationError, getLoraVersionIdValidationError, loraPresetItemToHordePayload } from "../loraPresets";
+import { getLatestLoraValidationError, getLoraStrengthValidationError, getLoraVersionIdValidationError, loraPresetItemToHordePayload } from "../loraPresets";
 import { AdvancedGenerateOptionsSnapshot, buildAdvancedGenerationStrengthModal, createAdvancedGenerationAdjustmentSession, snapshotAdvancedGenerateOptions } from "../advancedGenerationAdjustments";
 
 const config = JSON.parse(readFileSync("./config.json").toString()) as Config
@@ -410,7 +410,7 @@ export async function executeAdvancedGeneration(ctx: AdvancedGenerationContext, 
             })
             if(ctx.client.config.advanced?.dev) console.log(lora)
             if(!lora) return ctx.error({error: "A LoRA model-page ID from https://civitai.com/ has to be given. LoCon and LyCORIS are also acceptable.", codeblock: false})
-            const validationError = getLoraValidationError(ctx.client, lora)
+            const validationError = getLatestLoraValidationError(ctx.client, lora)
             if(validationError) return ctx.error({error: validationError, codeblock: false})
             requested_loras.push({name: lora.id.toString(), model: 1, clip: 1, inject_trigger: "any"})
             requested_lora_labels.push(`${lora.name} (1)`)
@@ -879,7 +879,7 @@ async function autocompleteAdvancedGeneration(context: AutocompleteContext): Pro
                 if(!isNaN(Number(query)) && query) {
                     const lora_by_id = await context.client.fetchLORAByID(query, context.client.config.advanced_generate?.user_restrictions?.allow_nsfw).catch(() => null)
 
-                    if(lora_by_id?.name && !getLoraValidationError(context.client, lora_by_id)) ret.push({
+                    if(lora_by_id?.name && !getLatestLoraValidationError(context.client, lora_by_id)) ret.push({
                         name: clampChoiceName(`LoRA • ${lora_by_id.name}${lora_by_id.modelVersions[0]?.baseModel ? ` • ${lora_by_id.modelVersions[0].baseModel}` : ""}`),
                         value: lora_by_id.id.toString()
                     })
@@ -887,7 +887,7 @@ async function autocompleteAdvancedGeneration(context: AutocompleteContext): Pro
                     const loras = await context.client.fetchLORAs(query, 10, context.client.config.advanced_generate?.user_restrictions?.allow_nsfw).catch(() => null)
     
                     ret.push(
-                        ...(loras?.items ?? []).filter(l => l?.name && l?.id.toString() && !getLoraValidationError(context.client, l)).map(l => ({
+                        ...(loras?.items ?? []).filter(l => l?.name && l?.id.toString() && !getLatestLoraValidationError(context.client, l)).map(l => ({
                             name: clampChoiceName(`LoRA • ${l.name}${l.modelVersions[0]?.baseModel ? ` • ${l.modelVersions[0].baseModel}` : ""}`),
                             value: l.id.toString()
                         }))
